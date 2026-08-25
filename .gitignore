@@ -1,0 +1,19 @@
+# 빌드 산출물
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+*.exe
+*.obj
+*.pdb
+*.ilk
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# 런타임 생성물
+tick_metrics.csv
+navdata.bin
