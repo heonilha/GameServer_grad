@@ -25,6 +25,9 @@
 #include "nav_grid.h"
 #include "world_object.h"
 #include "world_grid.h"
+#include "skill_table.h"
+#include "monster_table.h"
+#include "combat.h"
 #include "game_tick.h"
 
 #pragma comment(lib, "MSWSock.lib")
@@ -42,6 +45,13 @@ SessionManager g_sessions;
 NpcManager     g_npcs;
 WorldGrid      g_grid;
 NavGrid        g_nav;
+SkillTable     g_skills;
+MonsterTable   g_monsters;
+CombatSystem   g_combat;
+
+// 이번 틱에 위치가 바뀐 오브젝트. 페이즈 1과 AI 페이즈가 채우고
+// 페이즈 3이 읽는다. 선언은 world_object.h에 있다.
+std::unordered_set<int32_t> g_moved;
 
 std::atomic<bool> g_running{ true };
 
@@ -84,6 +94,24 @@ void FlushSendBatch(const std::shared_ptr<Session>& session,
     if (!session || batch.empty()) return;
     if (session->EnqueueSendBatch(batch)) {
         g_scope.spawn(SendWorker(session));
+    }
+}
+
+// 특정 위치에서 일어난 일을 주변 플레이어에게 알린다.
+//
+// 시야 목록을 뒤지는 대신 그리드를 쓰는 이유는, 전투는 위치에서 일어나지
+// 특정 세션에 속하지 않기 때문이다. 투사체 폭발처럼 시전자가 이미 멀리
+// 있는 경우도 이 방식이 맞다.
+void BroadcastNear(const Vec3i& pos, const void* data, uint16_t len)
+{
+    for (int32_t id : g_grid.QueryNear(pos)) {
+        if (id >= NPC_ID_START) continue;
+
+        auto session = g_sessions.Get(id);
+        if (!session || session->GetState() != SessionState::Playing) continue;
+        if (!IsInViewRange(pos, session->GetPosition())) continue;
+
+        SendPacket(session, data, len);
     }
 }
 
@@ -170,6 +198,9 @@ bool HandleLogin(const std::shared_ptr<Session>& self, const uint8_t* raw)
     start.grounded = true;
     self->SetMoveState(start);
 
+    // 캐릭터 생성 화면이 아직 없어서 임시로 나눠 준다.
+    // 생성 UI가 들어오면 C2S_Login에 class_id를 추가하고 여기를 바꾼다.
+    self->SetClassId(static_cast<uint8_t>(self->GetId() % 2));
 
     const auto my = self->MakeSnapshot();
 
@@ -248,6 +279,62 @@ bool HandleChat(const std::shared_ptr<Session>& self, const uint8_t* raw)
     return true;
 }
 
+// 스킬 시전.
+//
+// 여기서 판정하지 않는다는 점이 중요하다.
+// 검증만 하고 예약 큐에 넣으면, 윈드업이 끝나는 틱에 전투 페이즈가 판정한다.
+// 몽타주의 타격 프레임과 서버 판정 시점을 맞추기 위해서다.
+bool HandleUseSkill(const std::shared_ptr<Session>& self, const uint8_t* raw)
+{
+    if (self->GetState() != SessionState::Playing) return false;
+
+    const auto* packet = reinterpret_cast<const C2S_UseSkill*>(raw);
+
+    auto fail = [&](uint8_t reason) {
+        S2C_SkillFailed out{};
+        InitHeader(out, S2C_SKILL_FAILED);
+        out.skill_id = packet->skill_id;
+        out.reason   = reason;
+        SendPacket(self, &out, out.h.size);
+        return true;   // 시전 실패는 연결을 끊을 이유가 아니다
+    };
+
+    const SkillDef* def = g_skills.Get(packet->skill_id);
+    if (!def)                       return fail(FAIL_UNKNOWN_SKILL);
+    if (!self->IsAlive())           return fail(FAIL_DEAD);
+    if (def->class_id != self->GetClassId()) return fail(FAIL_WRONG_CLASS);
+
+    const uint32_t now = g_tick_loop ? g_tick_loop->CurrentTick() : 0;
+
+    // 쿨타임을 먼저 본다. 마나를 먼저 깎으면 쿨타임에 걸렸을 때
+    // 마나만 사라진다.
+    if (!self->TryConsumeCooldown(packet->skill_id, now, def->cooldown_ticks)) {
+        return fail(FAIL_COOLDOWN);
+    }
+    if (def->mp_cost > 0 && !self->ConsumeMp(def->mp_cost)) {
+        return fail(FAIL_NOT_ENOUGH_MP);
+    }
+
+    // 시전 시작을 주변에 알린다. 클라는 이걸 받아 몽타주를 재생한다.
+    // 데미지는 여기 없다. 윈드업 뒤에 S2C_Damage로 따로 간다.
+    S2C_SkillUsed used{};
+    InitHeader(used, S2C_SKILL_USED);
+    used.caster_id   = self->GetId();
+    used.skill_id    = packet->skill_id;
+    used.yaw         = packet->yaw;
+    used.server_tick = now;
+    BroadcastNear(self->GetPosition(), &used, used.h.size);
+
+    PendingHit hit{};
+    hit.execute_tick = now + def->windup_ticks;
+    hit.caster_id    = self->GetId();
+    hit.skill_id     = packet->skill_id;
+    hit.yaw          = packet->yaw;
+    g_combat.EnqueueHit(hit);
+
+    return true;
+}
+
 // 개발/테스트 전용. 배포 빌드에서는 등록하지 않는다.
 bool HandleTeleport(const std::shared_ptr<Session>& self, const uint8_t* raw)
 {
@@ -285,6 +372,7 @@ void RegisterHandlers()
     g_handlers[C2S_LOGIN]     = HandleLogin;
     g_handlers[C2S_INPUT]     = HandleInput;
     g_handlers[C2S_CHAT]      = HandleChat;
+    g_handlers[C2S_USE_SKILL] = HandleUseSkill;
     g_handlers[C2S_LOGOUT]    = HandleLogout;
 #ifdef _DEBUG
     g_handlers[C2S_TELEPORT] = HandleTeleport;
@@ -433,6 +521,12 @@ void InitializeNpcs(int32_t count)
     for (int32_t i = 0; i < g_npcs.Count(); ++i) {
         NpcEntity* npc = g_npcs.At(i);
 
+        // 종류를 돌아가며 배정한다. 스폰 테이블(어느 지역에 무엇이 나오는지)이
+        // 생기면 이 부분을 그 데이터로 바꾼다.
+        const uint16_t monster_id = g_monsters.IdAt(i);
+        const MonsterDef* def = g_monsters.Get(monster_id);
+        if (!def) continue;
+
         MoveState state{};
         for (int attempt = 0; attempt < 32; ++attempt) {
             state.pos.x = WORLD_MIN + (std::rand() % (WORLD_MAX - WORLD_MIN));
@@ -442,14 +536,16 @@ void InitializeNpcs(int32_t count)
         state.pos.z    = g_nav.SampleHeight(state.pos.x, state.pos.y);
         state.grounded = true;
 
+        npc->monster_id = monster_id;
         npc->SetMoveState(state);
-        npc->SetSpawnPoint(state.pos);
-        const char name[] = "NPC";
-        npc->SetName(name, sizeof(name) - 1);
+        npc->SetSpawnPoint(state.pos);   // 죽으면 원래 자리에서 되살아난다
+        npc->SetName(def->name, std::strlen(def->name));
+        npc->SetStats(def->max_hp, def->visual_id);
+        npc->ClearAi();
 
         g_grid.Add(npc->GetId(), state.pos);
     }
-    std::cout << "NPC initialized: " << g_npcs.Count() << "\n";
+    std::cout << "Monsters spawned: " << g_npcs.Count() << "\n";
 }
 
 // ----------------------------------------------------------------------------
@@ -544,6 +640,20 @@ int main()
 
     g_iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
     CreateIoCompletionPort(reinterpret_cast<HANDLE>(g_listen_socket), g_iocp, 0, 0);
+
+    if (!g_monsters.LoadFromCsv("monsters.csv")) {
+        std::cerr << "monsters.csv 로드 실패\n";
+        return 1;
+    }
+    std::cout << "Monsters loaded: " << g_monsters.Count() << " types\n";
+
+    if (!g_skills.LoadFromCsv("skills.csv")) {
+        std::cerr << "skills.csv 로드 실패 — 전투를 쓸 수 없습니다\n";
+        return 1;
+    }
+    std::cout << "Skills loaded: " << g_skills.LoadedCount() << "\n";
+
+    g_combat.Initialize();
 
     RegisterHandlers();
     InitializeNpcs(100);

@@ -1,0 +1,9 @@
+# 몬스터 수치 테이블
+#
+# aggressive : 0=수동형(맞아야 반격), 1=능동형(시야에 들면 먼저 덤빔)
+# 거리 단위는 cm. aggro_range는 수동형이면 0.
+# leash_range : 스폰 지점에서 이만큼 벗어나면 추격을 포기하고 복귀한다.
+monster_id,name,visual_id,aggressive,max_hp,damage,move_speed,aggro_range,attack_range,leash_range,attack_cooldown_ms,attack_windup_ms
+1,Slime,1,0,60,8,300,0,150,2500,1500,400
+2,Golem,2,0,200,20,220,0,220,2000,2500,700
+3,Goblin,3,1,90,12,420,1500,160,3500,1200,350

@@ -39,6 +39,8 @@
 #include "world_grid.h"
 #include "tick_worker_pool.h"
 #include "tick_metrics.h"
+#include "combat_tick.h"
+#include "monster_ai.h"
 
 // server_main.cpp가 정의한다
 extern SessionManager    g_sessions;
@@ -80,6 +82,10 @@ public:
             PhaseSimulate();
             m_metrics.EndPhaseSimulate();
 
+            // AI와 전투는 몬스터 위치와 HP를 바꾸므로 월드를 변경한다.
+            // 시뮬레이션과 같은 이유로 단일 스레드에서 돈다.
+            RunAiPhase(m_tick);
+            RunCombatPhase(m_tick);
 
             const bool view_tick = (m_tick % VIEW_UPDATE_INTERVAL == 0);
             if (view_tick) PhaseUpdateViews();
@@ -118,7 +124,7 @@ private:
     // 페이즈 1 — 시뮬레이션 (단일 스레드)
     // ------------------------------------------------------------------------
     void PhaseSimulate() {
-        m_moved.clear();
+        g_moved.clear();
 
         std::vector<MoveInput> inputs;
         inputs.reserve(MAX_INPUTS_PER_TICK);
@@ -150,7 +156,7 @@ private:
             if (from.x != state.pos.x || from.y != state.pos.y) {
                 g_grid.Move(session->GetId(), from, state.pos);
             }
-            m_moved.insert(session->GetId());
+            g_moved.insert(session->GetId());
         });
     }
 
@@ -305,7 +311,7 @@ private:
             static_cast<int64_t>(NEAR_RANGE) * NEAR_RANGE;
 
         for (int32_t id : session->CopyViewList()) {
-            if (!m_moved.count(id)) continue;   // 안 움직였으면 보낼 필요가 없다
+            if (!g_moved.count(id)) continue;   // 안 움직였으면 보낼 필요가 없다
 
             WorldObject::Snapshot other;
             if (!TryGetSnapshot(id, other)) continue;
@@ -342,9 +348,6 @@ private:
     TickMetrics    m_metrics;
 
     uint32_t m_tick = 0;
-
-    // 페이즈 1(단일 스레드)에서만 쓰고, 페이즈 3에서는 읽기만 한다.
-    std::unordered_set<int32_t> m_moved;
 
     // 파티션별 조립 버퍼. 매 틱 할당하지 않기 위해 재사용한다.
     std::vector<std::vector<char>> m_scratch;

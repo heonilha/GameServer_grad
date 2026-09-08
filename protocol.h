@@ -111,6 +111,7 @@ enum PacketType : uint16_t {
     C2S_LOGIN          = 1,
     C2S_INPUT          = 2,   // 위치가 아니라 입력을 보낸다
     C2S_CHAT           = 3,
+    C2S_USE_SKILL      = 4,
     C2S_TELEPORT       = 5,   // 개발/테스트 전용. 배포 시 막을 것
     C2S_LOGOUT         = 6,
 
@@ -122,6 +123,14 @@ enum PacketType : uint16_t {
     S2C_MOVE_OBJECT    = 105,  // 남의 캐릭터 상태
     S2C_CHAT_MESSAGE   = 106,
     S2C_STATUS_CHANGE  = 107,
+
+    S2C_SKILL_USED     = 108,  // 시전 시작 (몽타주/이펙트 재생용)
+    S2C_SKILL_FAILED   = 109,  // 시전자에게만. 왜 실패했는지
+    S2C_DAMAGE         = 110,
+    S2C_PROJECTILE     = 111,  // 투사체 생성
+    S2C_PROJECTILE_END = 112,  // 투사체 소멸
+    S2C_DEATH          = 113,
+    S2C_RESPAWN        = 114,
 
     PT_MAX             = 256,
 };
@@ -142,6 +151,59 @@ enum InputButton : uint8_t {
 enum MoveFlag : uint8_t {
     MF_GROUNDED = 1 << 0,
 };
+
+// ----------------------------------------------------------------------------
+// 전투
+//
+// 판정은 전부 서버에서 한다. 골격(bone) 히트박스는 쓰지 않는다.
+// 서버에는 애니메이션 시스템이 없어서 본 트랜스폼을 알 수 없고,
+// 만든다 해도 언리얼과 프레임 단위로 맞추는 것은 사실상 불가능하다.
+//
+// 대신 스킬마다 단순한 도형을 정의하고 서버가 자기가 아는 위치로 판정한다.
+// 기획한 패턴(근접 부채꼴, 광역 원, 브레스, 투사체)이 전부 도형으로 표현된다.
+// ----------------------------------------------------------------------------
+
+enum SkillShape : uint8_t {
+    SHAPE_CONE = 0,   // 시전자 기준 부채꼴 (전사 근접 공격)
+    SHAPE_PROJECTILE = 1,   // 날아가서 충돌 지점에 원형 판정 (파이어볼)
+};
+
+enum SkillFailReason : uint8_t {
+    FAIL_COOLDOWN = 0,
+    FAIL_NOT_ENOUGH_MP = 1,
+    FAIL_DEAD = 2,
+    FAIL_UNKNOWN_SKILL = 3,
+    FAIL_WRONG_CLASS = 4,
+};
+
+enum DamageFlag : uint8_t {
+    DMG_KILLED = 1 << 0,
+};
+
+enum ProjectileEndReason : uint8_t {
+    PROJ_HIT_TARGET = 0,
+    PROJ_HIT_WALL = 1,
+    PROJ_EXPIRED = 2,
+};
+
+// 스킬 개수 상한. 쿨타임 배열 크기로 쓴다.
+inline constexpr int32_t MAX_SKILLS = 64;
+
+// 투사체 id 대역. 플레이어(0~), NPC(1000000~)와 겹치지 않게 띄운다.
+inline constexpr int32_t PROJECTILE_ID_START = 2000000;
+inline constexpr int32_t MAX_PROJECTILES = 4096;
+
+// 캐릭터를 원기둥으로 근사할 때의 반지름(cm).
+// 투사체 충돌 판정에 쓴다.
+inline constexpr int32_t ACTOR_RADIUS = 45;
+
+// 사망 후 부활까지 (틱)
+inline constexpr int32_t PLAYER_RESPAWN_TICKS = TICK_RATE * 5;
+inline constexpr int32_t NPC_RESPAWN_TICKS = TICK_RATE * 20;
+
+// 플레이어 부활 지점 (마을). 기획의 "인근 마을 부활"에 해당한다.
+inline constexpr int32_t VILLAGE_X = 0;
+inline constexpr int32_t VILLAGE_Y = 0;
 
 #pragma pack(push, 1)
 
@@ -285,6 +347,76 @@ struct S2C_StatusChange {
     int32_t  max_hp;
     uint64_t exp;
     uint8_t  level;
+};
+
+// ---- 전투 ----
+
+struct C2S_UseSkill {
+    PacketHeader h;
+    uint16_t skill_id;
+    int16_t  yaw;         // 시전 방향
+    int32_t  target_id;   // 대상 지정이 없으면 -1
+};
+
+// 시야 안 모두에게. 클라는 이걸 받아 몽타주와 이펙트를 재생한다.
+// 데미지는 여기 없다. 윈드업이 끝난 뒤 S2C_Damage로 따로 온다.
+struct S2C_SkillUsed {
+    PacketHeader h;
+    int32_t  caster_id;
+    uint16_t skill_id;
+    int16_t  yaw;
+    uint32_t server_tick;
+};
+
+// 시전자에게만. 클라 예측이 어긋났을 때 되돌리는 근거가 된다.
+struct S2C_SkillFailed {
+    PacketHeader h;
+    uint16_t skill_id;
+    uint8_t  reason;      // SkillFailReason
+};
+
+struct S2C_Damage {
+    PacketHeader h;
+    int32_t target_id;
+    int32_t attacker_id;
+    int32_t amount;
+    int32_t remaining_hp;
+    uint8_t flags;        // DamageFlag
+};
+
+// 투사체는 매 틱 위치를 보내지 않는다.
+// 시작 위치와 속도만 주면 클라가 같은 식으로 날려서 그린다.
+// 실제 명중 판정은 서버가 하고, 결과만 S2C_ProjectileEnd로 알린다.
+struct S2C_Projectile {
+    PacketHeader h;
+    int32_t  projectile_id;
+    int32_t  owner_id;
+    uint16_t skill_id;
+    Vec3i    pos;
+    int32_t  vel_x;       // cm/s
+    int32_t  vel_y;
+    int32_t  vel_z;
+    uint32_t server_tick;
+};
+
+struct S2C_ProjectileEnd {
+    PacketHeader h;
+    int32_t projectile_id;
+    Vec3i   pos;
+    uint8_t reason;       // ProjectileEndReason
+};
+
+struct S2C_Death {
+    PacketHeader h;
+    int32_t object_id;
+    int32_t killer_id;
+};
+
+struct S2C_Respawn {
+    PacketHeader h;
+    int32_t object_id;
+    Vec3i   pos;
+    int32_t hp;
 };
 
 #pragma pack(pop)

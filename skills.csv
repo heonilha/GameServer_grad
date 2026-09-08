@@ -1,0 +1,11 @@
+# 스킬 수치 테이블 — 서버와 클라이언트가 같이 읽는다.
+# 밸런싱은 이 파일만 고치면 양쪽에 동시에 반영된다.
+#
+# class_id : 0=전사, 1=마법사
+# shape    : 0=부채꼴(cone), 1=투사체(projectile)
+# range    : cone=사거리, projectile=최대 비행 거리 (cm)
+# angle    : cone 전체 각도 (도)
+# radius   : projectile 착탄 반경 (cm)
+skill_id,name,class_id,shape,range,angle,radius,damage,mp_cost,cooldown_ms,windup_ms,proj_speed,proj_life_ms
+1,WarriorSlash,0,0,250,100,0,25,0,800,300,0,0
+2,Fireball,1,1,3000,0,180,40,15,1500,500,1800,3000

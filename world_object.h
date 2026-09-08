@@ -89,6 +89,73 @@ public:
         return s;
     }
 
+    // ---- 전투 ----
+
+    bool IsAlive() const {
+        std::lock_guard lock(m_state_lock);
+        return m_hp > 0;
+    }
+
+    // 피해를 적용하고 남은 HP를 돌려준다.
+    // killed에는 "이번 타격으로 죽었는가"가 들어간다.
+    //
+    // 이미 죽은 대상에 두 번째 타격이 들어오는 경우가 실제로 생긴다.
+    // (같은 틱에 파이어볼과 근접 공격이 겹치는 등)
+    // 그때 killed를 다시 true로 주면 사망 처리가 두 번 돌아
+    // 경험치가 이중 지급되므로, 살아있을 때만 true로 만든다.
+    int32_t ApplyDamage(int32_t amount, bool& killed) {
+        std::lock_guard lock(m_state_lock);
+        killed = false;
+        if (m_hp <= 0) return 0;
+
+        m_hp -= amount;
+        if (m_hp <= 0) {
+            m_hp = 0;
+            killed = true;
+        }
+        return m_hp;
+    }
+
+    // 마나를 소비한다. 부족하면 아무것도 하지 않고 false.
+    // 확인과 차감을 한 락 안에서 해야 같은 틱에 두 번 시전되지 않는다.
+    bool ConsumeMp(int32_t amount) {
+        std::lock_guard lock(m_state_lock);
+        if (m_mp < amount) return false;
+        m_mp -= amount;
+        return true;
+    }
+
+    int32_t GetMp() const {
+        std::lock_guard lock(m_state_lock);
+        return m_mp;
+    }
+
+    void RegenMp(int32_t amount) {
+        std::lock_guard lock(m_state_lock);
+        m_mp += amount;
+        if (m_mp > m_max_mp) m_mp = m_max_mp;
+    }
+
+    void Revive(const Vec3i& pos) {
+        std::lock_guard lock(m_state_lock);
+        m_hp = m_max_hp;
+        m_mp = m_max_mp;
+        m_move = MoveState{};
+        m_move.pos = pos;
+        m_move.grounded = true;
+    }
+
+    uint8_t GetClassId() const { return m_class_id; }
+    void SetClassId(uint8_t c) { m_class_id = c; }
+
+    // 테이블에서 읽은 값으로 초기화한다.
+    void SetStats(int32_t max_hp, int32_t visual_id) {
+        std::lock_guard lock(m_state_lock);
+        m_max_hp = max_hp;
+        m_hp = max_hp;
+        m_visual_id = visual_id;
+    }
+
 protected:
     const int32_t    m_id;
     const ObjectType m_type;
@@ -98,13 +165,25 @@ protected:
     MoveState m_move{};
     int32_t   m_hp = 100;
     int32_t   m_max_hp = 100;
+    int32_t   m_mp = 100;
+    int32_t   m_max_mp = 100;
     uint8_t   m_level = 1;
+    uint8_t   m_class_id = 0;   // 0=전사, 1=마법사
     int32_t   m_visual_id = 0;
 };
 
 // ----------------------------------------------------------------------------
 // NpcEntity — 소켓이 없는 가벼운 객체
 // ----------------------------------------------------------------------------
+
+// AI 상태 기계.
+// 넷이면 졸작 범위의 몬스터 동작이 전부 표현된다.
+enum class AiState : uint8_t {
+    Idle,     // 제자리. 어그로 대상을 찾는다
+    Chase,    // 대상을 향해 이동
+    Attack,   // 사거리 안. 쿨타임마다 공격
+    Return,   // 리쉬에 걸려 스폰 지점으로 복귀
+};
 
 class NpcEntity : public WorldObject {
 public:
@@ -119,6 +198,44 @@ public:
     }
     void SetRespawnTick(uint32_t t) {
         m_respawn_tick.store(t, std::memory_order_relaxed);
+    }
+
+    // ---- AI ----
+    //
+    // 아래 필드들은 락이 없다. AI 페이즈와 전투 페이즈가 모두 틱 스레드에서
+    // 단일 스레드로 돌기 때문이다. 다른 스레드에서 건드리면 안 된다.
+    // (위치만은 WorldObject의 락으로 보호된다 — 스냅샷 전송이 병렬이라서다)
+
+    uint16_t monster_id = 0;
+    AiState  ai_state = AiState::Idle;
+    int32_t  target_id = -1;
+    uint32_t next_attack_tick = 0;
+    uint32_t pending_hit_tick = 0;   // 0이면 예약된 타격 없음
+    uint32_t repath_tick = 0;
+
+    std::vector<Vec3i> path;
+    size_t path_index = 0;
+
+    // 수동형 몬스터가 맞았을 때 반격하게 한다.
+    // 능동형은 시야에 들어오기만 해도 이 함수 없이 Chase로 간다.
+    void OnDamaged(int32_t attacker_id) {
+        if (attacker_id < 0) return;
+        if (ai_state == AiState::Idle || ai_state == AiState::Return) {
+            target_id = attacker_id;
+            ai_state = AiState::Chase;
+            path.clear();
+            path_index = 0;
+            repath_tick = 0;
+        }
+    }
+
+    void ClearAi() {
+        ai_state = AiState::Idle;
+        target_id = -1;
+        pending_hit_tick = 0;
+        path.clear();
+        path_index = 0;
+        repath_tick = 0;
     }
 
 private:
@@ -295,6 +412,32 @@ public:
     //  겹치는 경우가 실제로 생긴다)
     std::mutex& ViewUpdateLock() { return m_view_update_lock; }
 
+    // ------------------------------------------------------------------------
+    // 스킬 쿨타임
+    //
+    // 확인과 기록을 한 번에 한다. 나눠 두면 같은 틱에 도착한 두 패킷이
+    // 둘 다 "쿨타임 지났음"을 보고 통과할 수 있다.
+    // ------------------------------------------------------------------------
+    bool TryConsumeCooldown(uint16_t skill_id, uint32_t now_tick,
+                            int32_t cooldown_ticks) {
+        if (skill_id >= MAX_SKILLS) return false;
+        std::lock_guard lock(m_cooldown_lock);
+
+        const uint32_t ready_at = m_cooldown_until[skill_id];
+        if (ready_at != 0 && now_tick < ready_at) return false;
+
+        m_cooldown_until[skill_id] = now_tick + cooldown_ticks;
+        return true;
+    }
+
+    // ---- 부활 ----
+    uint32_t GetRespawnTick() const {
+        return m_respawn_tick.load(std::memory_order_relaxed);
+    }
+    void SetRespawnTick(uint32_t t) {
+        m_respawn_tick.store(t, std::memory_order_relaxed);
+    }
+
 private:
     SOCKET m_socket = INVALID_SOCKET;
     std::atomic<SessionState> m_state{ SessionState::Accepted };
@@ -315,7 +458,22 @@ private:
     std::unordered_set<int32_t> m_view_list;
     std::mutex m_view_update_lock;
 
+    std::mutex m_cooldown_lock;
+    std::array<uint32_t, MAX_SKILLS> m_cooldown_until{};
+    std::atomic<uint32_t> m_respawn_tick{ 0 };   // 0이면 부활 대기 아님
 };
+
+// ----------------------------------------------------------------------------
+// 이번 틱에 위치가 바뀐 오브젝트 id.
+//
+// 페이즈 1(플레이어 이동)과 AI 페이즈(몬스터 이동)가 채우고,
+// 페이즈 3(스냅샷 전송)이 읽는다. 채우는 쪽이 둘 다 단일 스레드이고
+// 읽는 쪽은 그 뒤에 돌기 때문에 락이 필요 없다.
+//
+// 안 움직인 오브젝트의 위치를 보내지 않는 것이 대역폭 절감의 핵심이라
+// 이 집합이 정확해야 한다.
+// ----------------------------------------------------------------------------
+extern std::unordered_set<int32_t> g_moved;
 
 // ----------------------------------------------------------------------------
 // SessionManager — 지연 삭제
