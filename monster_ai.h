@@ -32,6 +32,7 @@
 #include "movement.h"
 #include "pathfinding.h"
 #include "combat_tick.h"
+#include "world_command.h"
 
 extern SessionManager g_sessions;
 extern NpcManager     g_npcs;
@@ -103,8 +104,13 @@ inline bool MoveToward(NpcEntity& npc, const Vec3i& goal,
          + 36000) % 36000);
 
     npc.SetPosition(next, yaw);
-    g_grid.Move(npc.GetId(), from, next);
     g_moved.insert(npc.GetId());
+
+    // 섹터를 넘었을 때만 커맨드를 남긴다.
+    // 이동 대부분은 같은 섹터 안에서 일어나므로 이 검사가 중요하다.
+    if (!WorldGrid::SameSector(from, next)) {
+        CombatOutbox().Migrate(npc.GetId(), from, next);
+    }
     return true;
 }
 
@@ -293,7 +299,7 @@ inline void UpdateMonster(NpcEntity& npc, uint32_t now_tick)
             target->IsAlive() &&
             Distance2DSq(npc.GetPosition(), target->GetPosition())
                 <= def->attack_range_sq) {
-            ApplyDamageTo(npc.target_id, npc.GetId(), def->damage, now_tick);
+            EmitDamage(npc.target_id, npc.GetId(), def->damage);
         }
     }
 }

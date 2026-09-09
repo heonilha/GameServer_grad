@@ -25,6 +25,8 @@
 #include "nav_grid.h"
 #include "world_object.h"
 #include "world_grid.h"
+#include "world_command.h"
+#include "world_command_apply.h"
 #include "skill_table.h"
 #include "monster_table.h"
 #include "combat.h"
@@ -48,6 +50,7 @@ NavGrid        g_nav;
 SkillTable     g_skills;
 MonsterTable   g_monsters;
 CombatSystem   g_combat;
+CommandBus     g_commands;
 
 // 이번 틱에 위치가 바뀐 오브젝트. 페이즈 1과 AI 페이즈가 채우고
 // 페이즈 3이 읽는다. 선언은 world_object.h에 있다.
@@ -225,7 +228,12 @@ bool HandleLogin(const std::shared_ptr<Session>& self, const uint8_t* raw)
     // 상태를 Playing으로 올린 뒤에 그리드에 넣는다.
     // 순서가 반대면 아직 Playing이 아닌 나를 다른 세션이 조회해서 놓친다.
     self->SetState(SessionState::Playing);
+
+    // 로그인은 I/O 스레드에서 일어나므로 커맨드로 미룰 수 없다.
+    // (다음 플러시까지 그리드에 없으면 시야 계산에서 빠진다)
+    // 아직 아무도 이 세션을 모르는 시점이라 직접 넣어도 경합이 없다.
     g_grid.Add(my.id, my.move.pos);
+    self->SetOwnerSector(WorldGrid::SectorIndexOf(my.move.pos));
 
     // 첫 시야는 즉시 계산한다. 다음 시야 갱신 틱까지 기다리면
     // 접속 직후 주변이 비어 보인다.
@@ -354,6 +362,7 @@ bool HandleTeleport(const std::shared_ptr<Session>& self, const uint8_t* raw)
     self->SetMoveState(state);
 
     g_grid.Move(self->GetId(), from, state.pos);
+    self->SetOwnerSector(WorldGrid::SectorIndexOf(state.pos));
     if (g_tick_loop) g_tick_loop->UpdateViewNow(self);
     return true;
 #else
@@ -450,6 +459,7 @@ exec::task<void> HandleSession(std::shared_ptr<Session> session)
 
     const int32_t my_id = session->GetId();
     g_grid.Remove(my_id, session->GetPosition());
+    session->SetOwnerSector(-1);
 
     // 나를 보고 있던 사람들에게 REMOVE를 직접 보내지 않는다.
     // 그리드에서 빠졌으므로 각자의 다음 시야 갱신에서 자동으로 처리된다.
@@ -544,6 +554,7 @@ void InitializeNpcs(int32_t count)
         npc->ClearAi();
 
         g_grid.Add(npc->GetId(), state.pos);
+        npc->SetOwnerSector(WorldGrid::SectorIndexOf(state.pos));
     }
     std::cout << "Monsters spawned: " << g_npcs.Count() << "\n";
 }
@@ -572,6 +583,7 @@ void StatsLoop()
                   << " | pkt/tick=" << s.avg_packets
                   << " out=" << (s.avg_bytes * TICK_RATE) / (1024.0 * 1024.0)
                   << "MB/s"
+                  << " cmd/tick=" << s.avg_commands
                   << " | overrun=" << g_tick_loop->Metrics().OverrunCount()
                   << "\n";
     }
@@ -654,6 +666,10 @@ int main()
     std::cout << "Skills loaded: " << g_skills.LoadedCount() << "\n";
 
     g_combat.Initialize();
+
+    // 지금은 파티션이 하나다. 섹터 웨이브 병렬화를 붙이면
+    // 웨이브당 파티션 수만큼 늘린다.
+    g_commands.Initialize(1);
 
     RegisterHandlers();
     InitializeNpcs(100);

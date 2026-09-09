@@ -19,6 +19,8 @@
 #include "world_object.h"
 #include "world_grid.h"
 #include "nav_grid.h"
+#include "world_command.h"
+#include "world_command_apply.h"
 #include "fixed_math.h"
 
 extern SessionManager g_sessions;
@@ -27,10 +29,21 @@ extern WorldGrid      g_grid;
 extern NavGrid        g_nav;
 extern SkillTable     g_skills;
 extern CombatSystem   g_combat;
+extern CommandBus     g_commands;
+
+// 전투 페이즈가 쓰는 출력함.
+// 지금은 파티션이 하나뿐이지만, 섹터 병렬화를 붙이면 섹터가 속한
+// 파티션의 출력함을 쓰게 된다.
+inline CommandOutbox& CombatOutbox() { return g_commands.For(0); }
+
+// 피해를 "적용"하지 않고 "기록"한다.
+// 대상이 다른 섹터에 있을 수 있고, 적용 순서를 고정해야 하기 때문이다.
+// 실제 적용은 FlushWorldCommands가 한다.
+inline void EmitDamage(int32_t target_id, int32_t attacker_id, int32_t amount) {
+    CombatOutbox().Damage(target_id, attacker_id, amount);
+}
 
 // server_main.cpp가 정의한다.
-// 해당 위치를 시야에 담고 있는 플레이어 전원에게 보낸다.
-void BroadcastNear(const Vec3i& pos, const void* data, uint16_t len);
 bool TryGetSnapshot(int32_t id, WorldObject::Snapshot& out);
 
 // ----------------------------------------------------------------------------
@@ -48,72 +61,9 @@ inline bool IsHostile(int32_t attacker_id, int32_t target_id)
 }
 
 // ----------------------------------------------------------------------------
-// 피해 적용
-//
-// 대상이 플레이어인지 NPC인지에 따라 저장소가 다르므로 여기서 흡수한다.
-// ----------------------------------------------------------------------------
-inline void ApplyDamageTo(int32_t target_id, int32_t attacker_id,
-                          int32_t amount, uint32_t now_tick)
-{
-    bool killed = false;
-    int32_t remaining = 0;
-    Vec3i   pos{};
-
-    if (target_id >= NPC_ID_START) {
-        NpcEntity* npc = g_npcs.Get(target_id);
-        if (!npc || !npc->IsAlive()) return;
-
-        remaining = npc->ApplyDamage(amount, killed);
-        pos = npc->GetPosition();
-
-        // 수동형 몬스터의 반격. 능동형은 시야만으로도 덤비므로 무의미하지만,
-        // 다른 대상을 때리다 나에게 맞았을 때 대상을 바꾸는 효과가 있다.
-        if (!killed) npc->OnDamaged(attacker_id);
-
-        if (killed) {
-            // 그리드에서 빼면 주변 플레이어의 다음 시야 갱신에서
-            // 자동으로 REMOVE가 나간다.
-            g_grid.Remove(target_id, pos);
-            npc->SetRespawnTick(now_tick + NPC_RESPAWN_TICKS);
-        }
-    } else {
-        auto session = g_sessions.Get(target_id);
-        if (!session || session->GetState() != SessionState::Playing) return;
-        if (!session->IsAlive()) return;
-
-        remaining = session->ApplyDamage(amount, killed);
-        pos = session->GetPosition();
-
-        if (killed) {
-            session->SetRespawnTick(now_tick + PLAYER_RESPAWN_TICKS);
-            // 기획상 사망 시 경험치가 감소한다. 경험치 시스템이 들어오면
-            // 여기에 붙인다.
-        }
-    }
-
-    S2C_Damage packet{};
-    InitHeader(packet, S2C_DAMAGE);
-    packet.target_id    = target_id;
-    packet.attacker_id  = attacker_id;
-    packet.amount       = amount;
-    packet.remaining_hp = remaining;
-    packet.flags        = killed ? DMG_KILLED : 0;
-    BroadcastNear(pos, &packet, packet.h.size);
-
-    if (killed) {
-        S2C_Death death{};
-        InitHeader(death, S2C_DEATH);
-        death.object_id = target_id;
-        death.killer_id = attacker_id;
-        BroadcastNear(pos, &death, death.h.size);
-    }
-}
-
-// ----------------------------------------------------------------------------
 // 부채꼴 판정 실행 (전사 근접 공격)
 // ----------------------------------------------------------------------------
-inline void ExecuteConeHit(const PendingHit& hit, const SkillDef& def,
-                           uint32_t now_tick)
+inline void ExecuteConeHit(const PendingHit& hit, const SkillDef& def)
 {
     auto caster = g_sessions.Get(hit.caster_id);
     if (!caster || caster->GetState() != SessionState::Playing) return;
@@ -135,7 +85,7 @@ inline void ExecuteConeHit(const PendingHit& hit, const SkillDef& def,
                       def.range_sq, def.half_angle_cos)) {
             continue;
         }
-        ApplyDamageTo(id, hit.caster_id, def.damage, now_tick);
+        EmitDamage(id, hit.caster_id, def.damage);
     }
 }
 
@@ -246,7 +196,7 @@ inline void AdvanceProjectiles(uint32_t now_tick)
             if (target.hp <= 0) continue;
             if (!IsInCircle(proj.pos, target.move.pos, def->radius)) continue;
 
-            ApplyDamageTo(id, proj.owner_id, def->damage, now_tick);
+            EmitDamage(id, proj.owner_id, def->damage);
         }
         EndProjectile(proj, PROJ_HIT_TARGET);
     }
@@ -266,8 +216,8 @@ inline void ProcessRespawns(uint32_t now_tick)
         npc->Revive(npc->GetSpawnPoint());
 
         // 그리드에 다시 넣으면 주변 플레이어의 다음 시야 갱신에서
-        // 자동으로 ADD가 나간다.
-        g_grid.Add(npc->GetId(), npc->GetSpawnPoint());
+        // 자동으로 ADD가 나간다. 그리드 변경이므로 커맨드로 미룬다.
+        CombatOutbox().GridAdd(npc->GetId(), npc->GetSpawnPoint());
     }
 
     g_sessions.ForEach([&](const std::shared_ptr<Session>& session) {
@@ -282,7 +232,7 @@ inline void ProcessRespawns(uint32_t now_tick)
         village.z = g_nav.SampleHeight(village.x, village.y);
 
         session->Revive(village);
-        g_grid.Move(session->GetId(), from, village);
+        CombatOutbox().Migrate(session->GetId(), from, village);
 
         S2C_Respawn packet{};
         InitHeader(packet, S2C_RESPAWN);
@@ -308,7 +258,7 @@ inline void RunCombatPhase(uint32_t now_tick)
         if (!def) continue;
 
         if (def->shape == SHAPE_CONE) {
-            ExecuteConeHit(hit, *def, now_tick);
+            ExecuteConeHit(hit, *def);
         } else if (def->shape == SHAPE_PROJECTILE) {
             SpawnProjectile(hit, *def, now_tick);
         }

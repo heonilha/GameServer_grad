@@ -35,6 +35,7 @@ public:
         int64_t  total_us = 0;
         int64_t  packets = 0;
         int64_t  bytes = 0;
+        int64_t  commands = 0;
     };
 
     // ---- 틱 단위 수집 ----
@@ -58,6 +59,8 @@ public:
         m_packets.fetch_add(count, std::memory_order_relaxed);
         m_bytes.fetch_add(bytes, std::memory_order_relaxed);
     }
+
+    void SetCommandCount(int64_t n) { m_current.commands = n; }
 
     void EndTick(int64_t budget_us) {
         m_current.total_us = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -86,6 +89,7 @@ public:
         int64_t max_us = 0;
         int64_t avg_packets = 0;
         int64_t avg_bytes = 0;
+        int64_t avg_commands = 0;
         int32_t players = 0;
     };
 
@@ -99,12 +103,13 @@ public:
         std::vector<int64_t> totals;
         totals.reserve(count);
 
-        int64_t sum = 0, packets = 0, bytes = 0;
+        int64_t sum = 0, packets = 0, bytes = 0, commands = 0;
         for (size_t i = begin; i < m_history.size(); ++i) {
             totals.push_back(m_history[i].total_us);
             sum += m_history[i].total_us;
             packets += m_history[i].packets;
             bytes += m_history[i].bytes;
+            commands += m_history[i].commands;
         }
         std::sort(totals.begin(), totals.end());
 
@@ -115,6 +120,7 @@ public:
         s.max_us = totals.back();
         s.avg_packets = packets / static_cast<int64_t>(count);
         s.avg_bytes = bytes / static_cast<int64_t>(count);
+        s.avg_commands = commands / static_cast<int64_t>(count);
         s.players = m_history.back().player_count;
         return s;
     }
@@ -129,16 +135,17 @@ public:
         if (fopen_s(&fp, path.c_str(), "w") != 0 || fp == nullptr) return false;
 
         std::fprintf(fp,
-            "tick,players,simulate_us,view_us,snapshot_us,total_us,packets,bytes\n");
+            "tick,players,simulate_us,view_us,snapshot_us,total_us,packets,bytes,commands\n");
         for (const Sample& s : m_history) {
-            std::fprintf(fp, "%u,%d,%lld,%lld,%lld,%lld,%lld,%lld\n",
+            std::fprintf(fp, "%u,%d,%lld,%lld,%lld,%lld,%lld,%lld,%lld\n",
                 s.tick, s.player_count,
                 static_cast<long long>(s.simulate_us),
                 static_cast<long long>(s.view_us),
                 static_cast<long long>(s.snapshot_us),
                 static_cast<long long>(s.total_us),
                 static_cast<long long>(s.packets),
-                static_cast<long long>(s.bytes));
+                static_cast<long long>(s.bytes),
+                static_cast<long long>(s.commands));
         }
         std::fclose(fp);
         return true;

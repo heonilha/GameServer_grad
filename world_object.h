@@ -148,6 +148,19 @@ public:
     uint8_t GetClassId() const { return m_class_id; }
     void SetClassId(uint8_t c) { m_class_id = c; }
 
+    // ---- 섹터 소유권 ----
+    //
+    // 이 객체를 변경할 권한을 가진 섹터. 그리드 소속과 항상 일치해야 한다.
+    // 위치(m_move.pos)는 시뮬레이션이 즉시 바꾸지만 소속은 커맨드 적용
+    // 시점에 바뀌므로, 한 틱 안에서 둘이 어긋나는 구간이 존재한다.
+    // 그래서 위치에서 매번 계산하지 않고 따로 들고 있는다.
+    int32_t GetOwnerSector() const {
+        return m_owner_sector.load(std::memory_order_relaxed);
+    }
+    void SetOwnerSector(int32_t index) {
+        m_owner_sector.store(index, std::memory_order_relaxed);
+    }
+
     // 테이블에서 읽은 값으로 초기화한다.
     void SetStats(int32_t max_hp, int32_t visual_id) {
         std::lock_guard lock(m_state_lock);
@@ -168,6 +181,7 @@ protected:
     int32_t   m_mp = 100;
     int32_t   m_max_mp = 100;
     uint8_t   m_level = 1;
+    std::atomic<int32_t> m_owner_sector{ -1 };
     uint8_t   m_class_id = 0;   // 0=전사, 1=마법사
     int32_t   m_visual_id = 0;
 };

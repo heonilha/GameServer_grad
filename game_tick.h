@@ -39,6 +39,8 @@
 #include "world_grid.h"
 #include "tick_worker_pool.h"
 #include "tick_metrics.h"
+#include "world_command.h"
+#include "world_command_apply.h"
 #include "combat_tick.h"
 #include "monster_ai.h"
 
@@ -80,12 +82,22 @@ public:
             m_metrics.BeginTick(m_tick, g_sessions.Count());
 
             PhaseSimulate();
+
+            // 이동으로 생긴 섹터 이동을 먼저 반영한다.
+            // AI와 전투가 그리드를 조회하므로 그 전에 맞춰둬야 한다.
+            int64_t commands = static_cast<int64_t>(FlushWorldCommands(m_tick));
             m_metrics.EndPhaseSimulate();
 
-            // AI와 전투는 몬스터 위치와 HP를 바꾸므로 월드를 변경한다.
-            // 시뮬레이션과 같은 이유로 단일 스레드에서 돈다.
+            // AI와 전투는 남의 섹터 객체를 건드릴 수 있으므로
+            // 직접 바꾸지 않고 커맨드만 쌓는다.
             RunAiPhase(m_tick);
             RunCombatPhase(m_tick);
+
+            // 피해, 사망, 섹터 이동을 정해진 순서로 한꺼번에 적용한다.
+            // 여기가 시야 갱신보다 앞서야 이번 틱의 사망/이동이
+            // 시야에 바로 반영된다.
+            commands += static_cast<int64_t>(FlushWorldCommands(m_tick));
+            m_metrics.SetCommandCount(commands);
 
             const bool view_tick = (m_tick % VIEW_UPDATE_INTERVAL == 0);
             if (view_tick) PhaseUpdateViews();
@@ -153,10 +165,13 @@ private:
             }
 
             session->SetMoveState(state);
-            if (from.x != state.pos.x || from.y != state.pos.y) {
-                g_grid.Move(session->GetId(), from, state.pos);
-            }
             g_moved.insert(session->GetId());
+
+            // 섹터를 넘었을 때만 커맨드를 남긴다.
+            // 이동 대부분은 같은 섹터 안이라 이 검사에서 걸러진다.
+            if (!WorldGrid::SameSector(from, state.pos)) {
+                g_commands.For(0).Migrate(session->GetId(), from, state.pos);
+            }
         });
     }
 

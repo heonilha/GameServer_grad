@@ -33,6 +33,29 @@ public:
 
     struct SectorCoord { int32_t sx, sy; };
 
+    // 섹터를 하나의 정수로. 소유권 비교와 커맨드 라우팅에 쓴다.
+    // 좌표 쌍을 그때그때 비교하는 것보다 실수가 적다.
+    static int32_t SectorIndexOf(const Vec3i& pos) {
+        const auto [sx, sy] = ToSector(pos);
+        return sy * GRID_DIM + sx;
+    }
+
+    // 같은 섹터인가. 소유권 판정의 기본 연산이다.
+    static bool SameSector(const Vec3i& a, const Vec3i& b) {
+        const auto sa = ToSector(a);
+        const auto sb = ToSector(b);
+        return sa.sx == sb.sx && sa.sy == sb.sy;
+    }
+
+    // 웨이브 번호 (0~3). 체커보드 병렬화를 붙일 때 쓴다.
+    //   간격이 2 이상인 섹터들끼리 같은 웨이브에 묶인다.
+    // 지금은 실행에 쓰이지 않지만, 소유권 개념을 코드에 남겨두기 위해 넣는다.
+    static int32_t WaveOf(int32_t sector_index) {
+        const int32_t sx = sector_index % GRID_DIM;
+        const int32_t sy = sector_index / GRID_DIM;
+        return (sy & 1) * 2 + (sx & 1);
+    }
+
     // 월드 좌표 → 섹터 좌표. z는 쓰지 않는다.
     // 3D지만 시야 판정은 수평 거리로만 해도 충분하고, 3D 격자는 메모리가
     // 세제곱으로 늘어난다.
