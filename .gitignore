@@ -17,3 +17,11 @@ x64/
 # 런타임 생성물
 tick_metrics.csv
 navdata.bin
+
+# 로컬 의존성 (README 참고, 각자 받아서 배치)
+ThirdParty/
+
+# 업데이트 도구 입력물 (일회성, 저장소에 두지 않음)
+update_gameserver.ps1
+*.patch
+gameserver-v5.2-files.tar.gz

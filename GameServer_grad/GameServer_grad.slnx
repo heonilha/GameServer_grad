@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="GameServer_grad/GameServer_grad.vcxproj" Id="c7b0ad8f-bfe8-45fe-8fec-8a6d644e0a46" />
+</Solution>
