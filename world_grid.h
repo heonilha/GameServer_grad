@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // world_grid.h — 섹터 그리드 (시야 처리의 핵심)
 //
@@ -97,6 +97,22 @@ public:
             s.objects.insert(id);
         }
     }
+
+    // 한 섹터의 오브젝트 id를 복사해 온다.
+    //
+    // 웨이브 병렬 페이즈에서 섹터 하나를 처리할 때 쓴다.
+    // 그 구간에는 이 섹터를 건드리는 스레드가 하나뿐이고 그리드 소속 변경도
+    // 커맨드로 미뤄져 있어서 사실 락이 필요 없지만, 다른 곳에서도 부를 수
+    // 있으므로 잠근다. 경합이 없어서 비용은 무시할 수준이다.
+    void CopyObjects(int32_t sector_index, std::vector<int32_t>& out) const {
+        out.clear();
+        if (sector_index < 0 || sector_index >= GRID_DIM * GRID_DIM) return;
+        Sector& s = m_sectors[sector_index];
+        std::lock_guard lock(s.lock);
+        out.assign(s.objects.begin(), s.objects.end());
+    }
+
+    static constexpr int32_t SectorCount() { return GRID_DIM * GRID_DIM; }
 
     // 주변 3x3 섹터의 오브젝트 id를 모아 돌려준다.
     // 콜백을 락 안에서 부르면 데드락 위험이 있으므로, 복사해서 나온 뒤 처리한다.

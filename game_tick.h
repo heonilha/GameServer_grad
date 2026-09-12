@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // game_tick.h — 고정 주기 시뮬레이션 루프
 //
@@ -26,6 +26,7 @@
 // ============================================================================
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -74,12 +75,17 @@ public:
 
         // 파티션마다 자기 버퍼를 쓴다. 매 틱 할당하지 않도록 미리 잡아둔다.
         m_scratch.resize(m_pool.PartitionCount());
+        m_sector_scratch.resize(m_pool.PartitionCount());
+        m_sector_stamps.assign(WorldGrid::SectorCount(), 0);
 
         while (g_running.load(std::memory_order_relaxed)) {
             next_tick += std::chrono::milliseconds(TICK_MS);
             ++m_tick;
 
             m_metrics.BeginTick(m_tick, g_sessions.Count());
+
+            // 이번 틱에 처리할 섹터를 웨이브별로 나눈다.
+            BuildWaveLists();
 
             PhaseSimulate();
 
@@ -88,9 +94,11 @@ public:
             int64_t commands = static_cast<int64_t>(FlushWorldCommands(m_tick));
             m_metrics.EndPhaseSimulate();
 
-            // AI와 전투는 남의 섹터 객체를 건드릴 수 있으므로
-            // 직접 바꾸지 않고 커맨드만 쌓는다.
-            RunAiPhase(m_tick);
+            // AI도 웨이브 병렬. 몬스터 위치를 바꾸지만 자기 섹터 것만 바꾼다.
+            if (m_tick % AI_TICK_INTERVAL == 0) PhaseMonsterAi();
+
+            // 전투는 아직 직렬이다. 투사체 배열이 섹터로 나뉘어 있지 않고,
+            // 판정 자체는 커맨드만 쌓으므로 비용이 크지 않다.
             RunCombatPhase(m_tick);
 
             // 피해, 사망, 섹터 이동을 정해진 순서로 한꺼번에 적용한다.
@@ -98,6 +106,9 @@ public:
             // 시야에 바로 반영된다.
             commands += static_cast<int64_t>(FlushWorldCommands(m_tick));
             m_metrics.SetCommandCount(commands);
+
+            // 파티션별로 흩어져 기록된 '움직인 목록'을 합친다.
+            g_moved.Merge();
 
             const bool view_tick = (m_tick % VIEW_UPDATE_INTERVAL == 0);
             if (view_tick) PhaseUpdateViews();
@@ -133,16 +144,91 @@ public:
 
 private:
     // ------------------------------------------------------------------------
-    // 페이즈 1 — 시뮬레이션 (단일 스레드)
+    // 웨이브 목록 구성
+    //
+    // 이번 틱에 처리할 섹터를 모아 웨이브 번호(0~3)별로 나눈다.
+    //
+    // 목록은 "플레이어가 있는 섹터 + 그 주변 3x3"으로 만든다.
+    //   - 플레이어 본인의 섹터가 반드시 포함된다
+    //   - 주변 3x3까지 넣으면 그것이 곧 몬스터 섹터 휴면 규칙이 된다
+    //     (아무도 보고 있지 않은 섹터는 애초에 목록에 오지 않는다)
+    //
+    // 중복 제거는 도장(stamp) 배열로 한다. 6천 칸을 매 틱 지우는 것보다 싸다.
+    // ------------------------------------------------------------------------
+    void BuildWaveLists() {
+        for (auto& list : m_wave_sectors) list.clear();
+        ++m_sector_stamp;
+
+        g_sessions.ForEach([&](const std::shared_ptr<Session>& session) {
+            if (session->GetState() != SessionState::Playing) return;
+
+            const auto center = WorldGrid::ToSector(session->GetPosition());
+            for (int32_t dy = -1; dy <= 1; ++dy) {
+                for (int32_t dx = -1; dx <= 1; ++dx) {
+                    const int32_t sx = center.sx + dx;
+                    const int32_t sy = center.sy + dy;
+                    if (sx < 0 || sx >= WorldGrid::GRID_DIM) continue;
+                    if (sy < 0 || sy >= WorldGrid::GRID_DIM) continue;
+
+                    const int32_t index = sy * WorldGrid::GRID_DIM + sx;
+                    if (m_sector_stamps[index] == m_sector_stamp) continue;
+                    m_sector_stamps[index] = m_sector_stamp;
+                    m_wave_sectors[WorldGrid::WaveOf(index)].push_back(index);
+                }
+            }
+        });
+    }
+
+    // 한 웨이브를 파티션에 나눠 병렬 실행한다.
+    //
+    // 같은 웨이브의 섹터는 간격이 2 이상이라 서로의 객체를 건드릴 수 없고,
+    // 남의 객체를 바꾸는 경우는 전부 커맨드로 빠져 있으므로 락이 없다.
+    //
+    // 섹터를 스트라이드로 나눈다. 앞뒤로 잘라 주면 밀집 지역이 한 워커에
+    // 몰릴 수 있는데, 스트라이드는 그 편향이 훨씬 덜하다.
+    template <typename F>
+    void RunWave(int32_t wave, F&& per_sector) {
+        const std::vector<int32_t>& sectors = m_wave_sectors[wave];
+        if (sectors.empty()) return;
+
+        m_pool.RunParallel([&](unsigned int part, unsigned int total) {
+            t_partition = static_cast<int32_t>(part);
+            std::vector<int32_t>& scratch = m_sector_scratch[part];
+
+            for (size_t i = part; i < sectors.size(); i += total) {
+                per_sector(sectors[i], scratch);
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------------
+    // 페이즈 1 — 시뮬레이션 (웨이브 병렬)
+    //
+    // 이전에는 세션 목록 전체를 단일 스레드로 훑었다.
+    // 이제 섹터 단위로 돌면서, 그 섹터가 소유한 플레이어만 시뮬레이션한다.
     // ------------------------------------------------------------------------
     void PhaseSimulate() {
-        g_moved.clear();
+        g_moved.Clear();
+
+        for (int32_t wave = 0; wave < 4; ++wave) {
+            RunWave(wave, [this](int32_t sector_index, std::vector<int32_t>& scratch) {
+                SimulateSector(sector_index, scratch);
+            });
+        }
+        t_partition = 0;
+    }
+
+    static void SimulateSector(int32_t sector_index, std::vector<int32_t>& scratch) {
+        g_grid.CopyObjects(sector_index, scratch);
 
         std::vector<MoveInput> inputs;
         inputs.reserve(MAX_INPUTS_PER_TICK);
 
-        g_sessions.ForEach([&](const std::shared_ptr<Session>& session) {
-            if (session->GetState() != SessionState::Playing) return;
+        for (int32_t id : scratch) {
+            if (id >= NPC_ID_START) continue;      // 몬스터는 AI 페이즈에서
+
+            auto session = g_sessions.Get(id);
+            if (!session || session->GetState() != SessionState::Playing) continue;
 
             session->PopInputs(inputs);
 
@@ -152,7 +238,7 @@ private:
             if (inputs.empty()) {
                 // 입력이 없어도 공중에 있으면 중력을 적용해야 한다.
                 // 안 그러면 점프 중 패킷이 끊긴 캐릭터가 공중에 멈춘다.
-                if (state.grounded) return;
+                if (state.grounded) continue;
 
                 MoveInput idle{};
                 idle.yaw = state.yaw;
@@ -165,14 +251,27 @@ private:
             }
 
             session->SetMoveState(state);
-            g_moved.insert(session->GetId());
+            g_moved.Mark(id);
 
             // 섹터를 넘었을 때만 커맨드를 남긴다.
             // 이동 대부분은 같은 섹터 안이라 이 검사에서 걸러진다.
             if (!WorldGrid::SameSector(from, state.pos)) {
-                g_commands.For(0).Migrate(session->GetId(), from, state.pos);
+                g_commands.For(t_partition).Migrate(id, from, state.pos);
             }
-        });
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // AI 페이즈 (웨이브 병렬)
+    // ------------------------------------------------------------------------
+    void PhaseMonsterAi() {
+        const uint32_t tick = m_tick;
+        for (int32_t wave = 0; wave < 4; ++wave) {
+            RunWave(wave, [tick](int32_t sector_index, std::vector<int32_t>& scratch) {
+                UpdateMonstersInSector(sector_index, tick, scratch);
+            });
+        }
+        t_partition = 0;
     }
 
     // ------------------------------------------------------------------------
@@ -181,6 +280,7 @@ private:
     // ------------------------------------------------------------------------
     void PhaseUpdateViews() {
         m_pool.RunParallel([this](unsigned int part, unsigned int total) {
+            t_partition = static_cast<int32_t>(part);
             std::vector<char>& batch = m_scratch[part];
             const int32_t span = (SessionManager::SlotCount() + total - 1) / total;
             const int32_t begin = static_cast<int32_t>(part) * span;
@@ -200,6 +300,7 @@ private:
     // ------------------------------------------------------------------------
     void PhaseSendSnapshots() {
         m_pool.RunParallel([this](unsigned int part, unsigned int total) {
+            t_partition = static_cast<int32_t>(part);
             std::vector<char>& batch = m_scratch[part];
             const int32_t span = (SessionManager::SlotCount() + total - 1) / total;
             const int32_t begin = static_cast<int32_t>(part) * span;
@@ -326,7 +427,7 @@ private:
             static_cast<int64_t>(NEAR_RANGE) * NEAR_RANGE;
 
         for (int32_t id : session->CopyViewList()) {
-            if (!g_moved.count(id)) continue;   // 안 움직였으면 보낼 필요가 없다
+            if (!g_moved.Contains(id)) continue;   // 안 움직였으면 보낼 필요가 없다
 
             WorldObject::Snapshot other;
             if (!TryGetSnapshot(id, other)) continue;
@@ -366,4 +467,10 @@ private:
 
     // 파티션별 조립 버퍼. 매 틱 할당하지 않기 위해 재사용한다.
     std::vector<std::vector<char>> m_scratch;
+    std::vector<std::vector<int32_t>> m_sector_scratch;
+
+    // 웨이브별 섹터 목록과 중복 제거용 도장
+    std::array<std::vector<int32_t>, 4> m_wave_sectors;
+    std::vector<uint32_t> m_sector_stamps;
+    uint32_t m_sector_stamp = 0;
 };

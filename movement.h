@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // movement.h — 이동 시뮬레이션
 //
@@ -43,6 +43,18 @@ struct MoveState {
     int32_t vel_z = 0;
     int16_t yaw = 0;
     bool    grounded = true;
+
+    // 이동량 계산에서 버려지는 소수부를 1/1000 cm 단위로 들고 있는다.
+    //
+    // 없으면 매 틱 잘린 만큼이 그대로 손실된다.
+    //   600 cm/s * 33 ms / 1000 = 19.8 -> 19 cm
+    //   30틱이면 570 cm. 설계값 600의 95%밖에 안 나온다.
+    //
+    // 잔차를 다음 틱으로 넘기면 설계값과 일치한다.
+    // 서버와 클라이언트가 같은 코드를 돌리므로 예측도 그대로 맞는다.
+    int32_t frac_x = 0;
+    int32_t frac_y = 0;
+    int32_t frac_z = 0;
 };
 
 // 한 번의 입력. C2S_Input에서 헤더를 뺀 것과 같다.
@@ -139,12 +151,20 @@ inline void SimulateStep(MoveState& state,
     }
 
     // ---- 이동량 (cm/s * ms / 1000 = cm) ----
-    const int32_t dx = static_cast<int32_t>(
-        static_cast<int64_t>(state.vel_x) * TICK_MS / 1000);
-    const int32_t dy = static_cast<int32_t>(
-        static_cast<int64_t>(state.vel_y) * TICK_MS / 1000);
-    const int32_t dz = static_cast<int32_t>(
-        static_cast<int64_t>(state.vel_z) * TICK_MS / 1000);
+    //
+    // 나머지를 버리지 않고 다음 틱으로 넘긴다.
+    // C++의 정수 나눗셈은 0 방향으로 자르고 %의 부호는 피제수를 따르므로,
+    // 음수 방향 이동에서도 같은 방식으로 동작한다. 결정론이 유지된다.
+    auto step = [](int32_t velocity, int32_t& frac) -> int32_t {
+        const int64_t total =
+            static_cast<int64_t>(velocity) * TICK_MS + frac;
+        frac = static_cast<int32_t>(total % 1000);
+        return static_cast<int32_t>(total / 1000);
+    };
+
+    const int32_t dx = step(state.vel_x, state.frac_x);
+    const int32_t dy = step(state.vel_y, state.frac_y);
+    const int32_t dz = step(state.vel_z, state.frac_z);
 
     // ---- 수평 이동 + 벽 슬라이딩 ----
     //
@@ -161,14 +181,18 @@ inline void SimulateStep(MoveState& state,
         if (dx != 0 && nav.IsWalkable(target_x, state.pos.y)) {
             state.pos.x = target_x;
             state.vel_y = 0;
+            state.frac_y = 0;
         }
         else if (dy != 0 && nav.IsWalkable(state.pos.x, target_y)) {
             state.pos.y = target_y;
             state.vel_x = 0;
+            state.frac_x = 0;
         }
         else {
             state.vel_x = 0;
             state.vel_y = 0;
+            state.frac_x = 0;
+            state.frac_y = 0;
         }
     }
 
@@ -183,12 +207,14 @@ inline void SimulateStep(MoveState& state,
     if (state.pos.z <= ground) {
         state.pos.z = ground;
         state.vel_z = 0;
+        state.frac_z = 0;
         state.grounded = true;
     }
     else if (state.vel_z <= 0 && state.pos.z - ground < STEP_TOLERANCE) {
         // 완만한 경사를 내려갈 때 매 틱 공중 판정이 되는 걸 막는다.
         state.pos.z = ground;
         state.vel_z = 0;
+        state.frac_z = 0;
         state.grounded = true;
     }
     else {

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // nav_grid.h — 서버가 아는 최소한의 지형 정보
 //
@@ -24,6 +24,7 @@
 #include <string>
 
 #include "protocol.h"
+#include "file_util.h"
 
 // 이동 가능 판정 해상도 (cm). 2m 격자.
 inline constexpr int32_t NAV_CELL_SIZE = 200;
@@ -54,10 +55,8 @@ public:
     //   [...]    int16[]   높이 (10cm 단위. int16이라 ±3276m까지 표현)
     // ------------------------------------------------------------------------
     bool LoadFromFile(const std::string& path) {
-        FILE* fp = nullptr;
-        if (fopen_s(&fp, path.c_str(), "rb") != 0 || fp == nullptr) {
-            return false;   // 파일이 없으면 평지 기본값 유지
-        }
+        std::FILE* fp = OpenFile(path.c_str(), "rb");
+        if (fp == nullptr) return false;   // 파일이 없으면 평지 기본값 유지
 
         char magic[4]{};
         int32_t nav_dim = 0, height_dim = 0;

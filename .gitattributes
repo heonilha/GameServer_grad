@@ -1,0 +1,9 @@
+﻿# 소스는 UTF-8 BOM. Git 이 내용을 건드리지 않게 한다.
+*.h    -text
+*.cpp  -text
+
+# CSV 는 런타임 파서가 첫 글자를 본다. 변형되면 안 된다.
+*.csv  -text
+
+# 네비 데이터는 바이너리
+*.bin  binary

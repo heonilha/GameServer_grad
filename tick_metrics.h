@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // tick_metrics.h — 틱 성능 계측
 //
@@ -23,6 +23,8 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+
+#include "file_util.h"
 
 class TickMetrics {
 public:
@@ -131,8 +133,8 @@ public:
 
     // 부하 테스트 결과를 CSV로. 엑셀이나 파이썬에서 바로 그래프로 만든다.
     bool WriteCsv(const std::string& path) const {
-        FILE* fp = nullptr;
-        if (fopen_s(&fp, path.c_str(), "w") != 0 || fp == nullptr) return false;
+        std::FILE* fp = OpenFile(path.c_str(), "w");
+        if (fp == nullptr) return false;
 
         std::fprintf(fp,
             "tick,players,simulate_us,view_us,snapshot_us,total_us,packets,bytes,commands\n");

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // protocol.h — 서버와 언리얼 클라이언트가 "파일 단위로" 공유하는 헤더.
 //
@@ -30,8 +30,10 @@ inline constexpr int32_t  VIEW_RANGE    = 10000;     // 시야 거리 (100m)
 
 // [불변식] VIEW_RANGE <= SECTOR_SIZE
 // 이 조건이 지켜져야 주변 3x3 섹터만 검사해도 시야 안을 빠짐없이 찾는다.
+// VIEW_RANGE <= SECTOR_SIZE 여야 주변 3x3 섹터 검사만으로
+// 시야 안의 모든 오브젝트를 빠짐없이 찾을 수 있다.
 static_assert(VIEW_RANGE <= SECTOR_SIZE,
-    "VIEW_RANGE는 SECTOR_SIZE 이하여야 3x3 섹터 검사로 충분하다");
+    "VIEW_RANGE must be <= SECTOR_SIZE for 3x3 sector queries");
 
 inline constexpr int32_t  MAX_PLAYERS   = 10000;
 inline constexpr int32_t  MAX_NPCS      = 1000;
@@ -50,6 +52,11 @@ inline constexpr uint16_t MAX_PACKET_SIZE  = 1024;
 // 스냅샷이 도착할 때마다 캐릭터가 튄다.
 // ----------------------------------------------------------------------------
 
+// [주의] TICK_RATE는 1000의 약수로 잡는 것이 좋다.
+// 30이면 TICK_MS가 33이 되어 30틱이 990ms가 되고, 실제 속도가
+// 설계값보다 1% 낮아진다. 서버와 클라이언트가 같은 값을 쓰므로
+// 어긋나지는 않지만, WALK_SPEED=600이 정확히 초당 600cm를 뜻하지 않게 된다.
+// 정확히 맞추려면 20(50ms), 25(40ms), 40(25ms), 50(20ms) 중에서 고른다.
 inline constexpr int32_t TICK_RATE = 30;               // 초당 시뮬레이션 횟수
 inline constexpr int32_t TICK_MS   = 1000 / TICK_RATE; // 33ms
 
@@ -428,10 +435,10 @@ struct S2C_Respawn {
 // ----------------------------------------------------------------------------
 template <typename T>
 constexpr void InitHeader(T& packet, PacketType type) {
-    static_assert(sizeof(T) <= MAX_PACKET_SIZE, "패킷이 MAX_PACKET_SIZE를 넘는다");
+    static_assert(sizeof(T) <= MAX_PACKET_SIZE, "packet exceeds MAX_PACKET_SIZE");
     packet.h.size = static_cast<uint16_t>(sizeof(T));
     packet.h.type = static_cast<uint16_t>(type);
 }
 
-static_assert(sizeof(PacketHeader) == 4,  "헤더는 4바이트여야 한다");
-static_assert(sizeof(Vec3i)        == 12, "Vec3i는 12바이트여야 한다");
+static_assert(sizeof(PacketHeader) == 4,  "PacketHeader must be 4 bytes");
+static_assert(sizeof(Vec3i)        == 12, "Vec3i must be 12 bytes");

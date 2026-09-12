@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 // server_main.cpp — 패킷 처리와 서버 기동
 //
 // 이동 처리가 여기에 없다는 점이 핵심이다.
@@ -25,6 +25,7 @@
 #include "nav_grid.h"
 #include "world_object.h"
 #include "world_grid.h"
+#include "csv_util.h"
 #include "world_command.h"
 #include "world_command_apply.h"
 #include "skill_table.h"
@@ -52,9 +53,9 @@ MonsterTable   g_monsters;
 CombatSystem   g_combat;
 CommandBus     g_commands;
 
-// 이번 틱에 위치가 바뀐 오브젝트. 페이즈 1과 AI 페이즈가 채우고
-// 페이즈 3이 읽는다. 선언은 world_object.h에 있다.
-std::unordered_set<int32_t> g_moved;
+// 이번 틱에 위치가 바뀐 오브젝트. 시뮬레이션과 AI 페이즈가 채우고
+// 스냅샷 페이즈가 읽는다. 선언은 world_object.h에 있다.
+MovedSet g_moved;
 
 std::atomic<bool> g_running{ true };
 
@@ -211,7 +212,7 @@ bool HandleLogin(const std::shared_ptr<Session>& self, const uint8_t* raw)
     InitHeader(result, S2C_LOGIN_RESULT);
     result.success   = 1;
     result.object_id = my.id;
-    std::strncpy(result.message, "Login successful.", sizeof(result.message) - 1);
+    CopyFixed(result.message, sizeof(result.message), "Login successful.");
     SendPacket(self, &result, result.h.size);
 
     S2C_AvatarInfo avatar{};
@@ -615,6 +616,10 @@ BOOL WINAPI ConsoleHandler(DWORD signal)
 
 int main()
 {
+    // 소스 파일이 UTF-8이므로 문자열 리터럴도 UTF-8이다.
+    // 콘솔 코드 페이지를 맞춰주지 않으면 한글 로그가 깨진다.
+    SetConsoleOutputCP(CP_UTF8);
+
     std::srand(static_cast<unsigned>(std::time(nullptr)));
     SetConsoleCtrlHandler(ConsoleHandler, TRUE);
 
@@ -654,22 +659,18 @@ int main()
     CreateIoCompletionPort(reinterpret_cast<HANDLE>(g_listen_socket), g_iocp, 0, 0);
 
     if (!g_monsters.LoadFromCsv("monsters.csv")) {
-        std::cerr << "monsters.csv 로드 실패\n";
+        std::cerr << "Failed to load monsters.csv\n";
         return 1;
     }
     std::cout << "Monsters loaded: " << g_monsters.Count() << " types\n";
 
     if (!g_skills.LoadFromCsv("skills.csv")) {
-        std::cerr << "skills.csv 로드 실패 — 전투를 쓸 수 없습니다\n";
+        std::cerr << "Failed to load skills.csv (combat unavailable)\n";
         return 1;
     }
     std::cout << "Skills loaded: " << g_skills.LoadedCount() << "\n";
 
     g_combat.Initialize();
-
-    // 지금은 파티션이 하나다. 섹터 웨이브 병렬화를 붙이면
-    // 웨이브당 파티션 수만큼 늘린다.
-    g_commands.Initialize(1);
 
     RegisterHandlers();
     InitializeNpcs(100);
@@ -691,6 +692,12 @@ int main()
                             ? cores - tick_workers - 1 : 1;
 
     g_tick_loop = std::make_unique<GameTickLoop>(tick_workers);
+
+    // 파티션 수는 워커 풀의 분할 수와 같아야 한다.
+    // (호출한 틱 스레드도 파티션 하나를 맡으므로 워커 수 + 1)
+    const size_t partitions = tick_workers + 1;
+    g_commands.Initialize(partitions);
+    g_moved.Initialize(partitions);
 
     std::cout << "Game server started on port " << SERVER_PORT << "\n"
               << "Tick " << TICK_RATE << "Hz, snapshot "

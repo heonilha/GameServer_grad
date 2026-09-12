@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // skill_table.h — 스킬 수치 테이블
 //
@@ -34,6 +34,7 @@
 #include <string>
 
 #include "protocol.h"
+#include "csv_util.h"
 
 struct SkillDef {
     uint16_t id = 0;
@@ -65,8 +66,8 @@ struct SkillDef {
 class SkillTable {
 public:
     bool LoadFromCsv(const std::string& path) {
-        FILE* fp = nullptr;
-        if (fopen_s(&fp, path.c_str(), "r") != 0 || fp == nullptr) return false;
+        std::FILE* fp = OpenFile(path.c_str(), "r");
+        if (fp == nullptr) return false;
 
         char line[512];
         bool header_skipped = false;
@@ -99,38 +100,28 @@ public:
     int LoadedCount() const { return m_loaded_count; }
 
 private:
+    // 컬럼 수. CSV 헤더와 반드시 일치해야 한다.
+    //   skill_id, name, class_id, shape, range, angle, radius, damage,
+    //   mp_cost, cooldown_ms, windup_ms, proj_speed, proj_life_ms
+    static constexpr int FIELD_COUNT = 13;
+
     static bool ParseLine(char* line, SkillDef& def) {
-        char* ctx = nullptr;
-        auto next = [&]() -> const char* {
-            return std::strtok_s(nullptr, ",\r\n", &ctx);
-            };
+        const char* f[FIELD_COUNT]{};
+        if (SplitCsvLine(line, f, FIELD_COUNT) < FIELD_COUNT) return false;
 
-        const char* first = std::strtok_s(line, ",\r\n", &ctx);
-        if (!first) return false;
-
-        def.id = static_cast<uint16_t>(std::atoi(first));
-
-        const char* name = next();
-        if (!name) return false;
-        std::strncpy(def.name, name, sizeof(def.name) - 1);
-
-        const char* fields[11]{};
-        for (int i = 0; i < 11; ++i) {
-            fields[i] = next();
-            if (!fields[i]) return false;
-        }
-
-        def.class_id = static_cast<uint8_t>(std::atoi(fields[0]));
-        def.shape = static_cast<uint8_t>(std::atoi(fields[1]));
-        def.range = std::atoi(fields[2]);
-        def.angle_deg = std::atoi(fields[3]);
-        def.radius = std::atoi(fields[4]);
-        def.damage = std::atoi(fields[5]);
-        def.mp_cost = std::atoi(fields[6]);
-        def.cooldown_ms = std::atoi(fields[7]);
-        def.windup_ms = std::atoi(fields[8]);
-        def.proj_speed = std::atoi(fields[9]);
-        def.proj_life_ms = std::atoi(fields[10]);
+        def.id           = static_cast<uint16_t>(std::atoi(f[0]));
+        CopyFixed(def.name, sizeof(def.name), f[1]);
+        def.class_id     = static_cast<uint8_t>(std::atoi(f[2]));
+        def.shape        = static_cast<uint8_t>(std::atoi(f[3]));
+        def.range        = std::atoi(f[4]);
+        def.angle_deg    = std::atoi(f[5]);
+        def.radius       = std::atoi(f[6]);
+        def.damage       = std::atoi(f[7]);
+        def.mp_cost      = std::atoi(f[8]);
+        def.cooldown_ms  = std::atoi(f[9]);
+        def.windup_ms    = std::atoi(f[10]);
+        def.proj_speed   = std::atoi(f[11]);
+        def.proj_life_ms = std::atoi(f[12]);
         return true;
     }
 
