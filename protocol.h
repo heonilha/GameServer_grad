@@ -22,8 +22,8 @@
 inline constexpr uint16_t SERVER_PORT   = 3500;
 
 // 좌표계는 언리얼 월드 좌표(cm)를 그대로 쓴다.
-inline constexpr int32_t  WORLD_MIN     = -500000;   // -5km
-inline constexpr int32_t  WORLD_MAX     =  500000;   // +5km
+inline constexpr int32_t  WORLD_MIN_CM  = -500000;   // -5km
+inline constexpr int32_t  WORLD_MAX_CM  =  500000;   // +5km
 
 inline constexpr int32_t  SECTOR_SIZE   = 12800;     // 시야 섹터 한 변 (128m)
 inline constexpr int32_t  VIEW_RANGE    = 10000;     // 시야 거리 (100m)
@@ -42,7 +42,7 @@ inline constexpr int32_t  NPC_ID_START  = 1000000;
 inline constexpr int32_t  MAX_NAME_LEN     = 20;
 inline constexpr int32_t  MAX_CHAT_MSG_LEN = 200;
 
-inline constexpr uint16_t MAX_PACKET_SIZE  = 1024;
+inline constexpr uint16_t MAX_PACKET_BYTES = 1024;
 
 // ----------------------------------------------------------------------------
 // 시뮬레이션 상수
@@ -435,7 +435,7 @@ struct S2C_Respawn {
 // ----------------------------------------------------------------------------
 template <typename T>
 constexpr void InitHeader(T& packet, PacketType type) {
-    static_assert(sizeof(T) <= MAX_PACKET_SIZE, "packet exceeds MAX_PACKET_SIZE");
+    static_assert(sizeof(T) <= MAX_PACKET_BYTES, "packet exceeds MAX_PACKET_BYTES");
     packet.h.size = static_cast<uint16_t>(sizeof(T));
     packet.h.type = static_cast<uint16_t>(type);
 }

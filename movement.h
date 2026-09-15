@@ -197,8 +197,8 @@ inline void SimulateStep(MoveState& state,
     }
 
     // 월드 경계
-    state.pos.x = Clamp(state.pos.x, WORLD_MIN, WORLD_MAX - 1);
-    state.pos.y = Clamp(state.pos.y, WORLD_MIN, WORLD_MAX - 1);
+    state.pos.x = Clamp(state.pos.x, WORLD_MIN_CM, WORLD_MAX_CM - 1);
+    state.pos.y = Clamp(state.pos.y, WORLD_MIN_CM, WORLD_MAX_CM - 1);
 
     // ---- 수직 이동과 착지 ----
     const int32_t ground = nav.SampleHeight(state.pos.x, state.pos.y);

@@ -37,15 +37,15 @@ namespace pathfinding {
 inline constexpr int32_t WINDOW = 64;
 inline constexpr int32_t WINDOW_CELLS = WINDOW * WINDOW;
 
-inline int32_t ToCellX(int32_t world_x) { return (world_x - WORLD_MIN) / NAV_CELL_SIZE; }
-inline int32_t ToCellY(int32_t world_y) { return (world_y - WORLD_MIN) / NAV_CELL_SIZE; }
+inline int32_t ToCellX(int32_t world_x) { return (world_x - WORLD_MIN_CM) / NAV_CELL_SIZE; }
+inline int32_t ToCellY(int32_t world_y) { return (world_y - WORLD_MIN_CM) / NAV_CELL_SIZE; }
 
 // 셀 중심의 월드 좌표. 모서리를 주면 벽에 붙어 걷게 된다.
 inline int32_t ToWorldX(int32_t cell_x) {
-    return WORLD_MIN + cell_x * NAV_CELL_SIZE + NAV_CELL_SIZE / 2;
+    return WORLD_MIN_CM + cell_x * NAV_CELL_SIZE + NAV_CELL_SIZE / 2;
 }
 inline int32_t ToWorldY(int32_t cell_y) {
-    return WORLD_MIN + cell_y * NAV_CELL_SIZE + NAV_CELL_SIZE / 2;
+    return WORLD_MIN_CM + cell_y * NAV_CELL_SIZE + NAV_CELL_SIZE / 2;
 }
 
 // ----------------------------------------------------------------------------

@@ -27,7 +27,7 @@
 class WorldGrid {
 public:
     static constexpr int32_t GRID_DIM =
-        (WORLD_MAX - WORLD_MIN + SECTOR_SIZE - 1) / SECTOR_SIZE;
+        (WORLD_MAX_CM - WORLD_MIN_CM + SECTOR_SIZE - 1) / SECTOR_SIZE;
 
     WorldGrid() : m_sectors(std::make_unique<Sector[]>(GRID_DIM* GRID_DIM)) {}
 
@@ -60,8 +60,8 @@ public:
     // 3D지만 시야 판정은 수평 거리로만 해도 충분하고, 3D 격자는 메모리가
     // 세제곱으로 늘어난다.
     static SectorCoord ToSector(const Vec3i& pos) {
-        int32_t sx = (pos.x - WORLD_MIN) / SECTOR_SIZE;
-        int32_t sy = (pos.y - WORLD_MIN) / SECTOR_SIZE;
+        int32_t sx = (pos.x - WORLD_MIN_CM) / SECTOR_SIZE;
+        int32_t sy = (pos.y - WORLD_MIN_CM) / SECTOR_SIZE;
         return { Clamp(sx), Clamp(sy) };
     }
 

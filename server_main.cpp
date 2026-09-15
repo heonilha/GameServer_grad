@@ -194,8 +194,8 @@ bool HandleLogin(const std::shared_ptr<Session>& self, const uint8_t* raw)
     // 시작 상태. 지면 높이를 샘플링해 공중에서 시작하지 않게 한다.
     MoveState start{};
     for (int attempt = 0; attempt < 32; ++attempt) {
-        start.pos.x = WORLD_MIN + (std::rand() % (WORLD_MAX - WORLD_MIN));
-        start.pos.y = WORLD_MIN + (std::rand() % (WORLD_MAX - WORLD_MIN));
+        start.pos.x = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
+        start.pos.y = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
         if (g_nav.IsWalkable(start.pos.x, start.pos.y)) break;
     }
     start.pos.z   = g_nav.SampleHeight(start.pos.x, start.pos.y);
@@ -540,8 +540,8 @@ void InitializeNpcs(int32_t count)
 
         MoveState state{};
         for (int attempt = 0; attempt < 32; ++attempt) {
-            state.pos.x = WORLD_MIN + (std::rand() % (WORLD_MAX - WORLD_MIN));
-            state.pos.y = WORLD_MIN + (std::rand() % (WORLD_MAX - WORLD_MIN));
+            state.pos.x = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
+            state.pos.y = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
             if (g_nav.IsWalkable(state.pos.x, state.pos.y)) break;
         }
         state.pos.z    = g_nav.SampleHeight(state.pos.x, state.pos.y);
