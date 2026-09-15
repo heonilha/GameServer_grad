@@ -16,6 +16,10 @@
 //            co_await로 완료를 기다리는 동안 버퍼가 살아있으면 된다.
 // ============================================================================
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include <WS2tcpip.h>
 #include <MSWSock.h>
 #include <windows.h>
