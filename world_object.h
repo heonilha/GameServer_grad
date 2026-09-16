@@ -50,7 +50,7 @@ public:
         m_move = s;
     }
 
-    void SetPosition(const Vec3i& p, int16_t yaw) {
+    void SetPosition(const Vec3i& p, uint16_t yaw) {
         std::lock_guard lock(m_state_lock);
         m_move.pos = p;
         m_move.yaw = yaw;

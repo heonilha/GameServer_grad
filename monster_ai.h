@@ -97,7 +97,7 @@ inline bool MoveToward(NpcEntity& npc, const Vec3i& goal,
     next.z = g_nav.SampleHeight(next.x, next.y);
 
     // 진행 방향을 바라본다 (0.01도 단위)
-    const int16_t yaw = static_cast<int16_t>(
+    const uint16_t yaw = static_cast<uint16_t>(
         (static_cast<int32_t>(std::atan2(
             static_cast<double>(next.y - from.y),
             static_cast<double>(next.x - from.x)) * 18000.0 / 3.14159265358979)

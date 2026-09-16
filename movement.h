@@ -41,7 +41,7 @@ struct MoveState {
     int32_t vel_x = 0;      // cm/s
     int32_t vel_y = 0;
     int32_t vel_z = 0;
-    int16_t yaw = 0;
+    uint16_t yaw = 0;
     bool    grounded = true;
 
     // 이동량 계산에서 버려지는 소수부를 1/1000 cm 단위로 들고 있는다.
@@ -62,7 +62,7 @@ struct MoveInput {
     uint32_t sequence = 0;
     int16_t  move_x = 0;    // -1000 ~ 1000
     int16_t  move_y = 0;
-    int16_t  yaw = 0;
+    uint16_t yaw = 0;
     uint8_t  buttons = 0;
 };
 
@@ -102,7 +102,7 @@ inline MoveInput SanitizeInput(const MoveInput& raw) {
     MoveInput in = raw;
     in.move_x = static_cast<int16_t>(Clamp(in.move_x, -1000, 1000));
     in.move_y = static_cast<int16_t>(Clamp(in.move_y, -1000, 1000));
-    in.yaw = static_cast<int16_t>(Clamp(in.yaw, 0, 35999));
+    in.yaw = static_cast<uint16_t>(Clamp(in.yaw, 0, 35999));
 
     const int64_t mag_sq =
         static_cast<int64_t>(in.move_x) * in.move_x +

@@ -247,7 +247,7 @@ struct C2S_Input {
     uint32_t sequence;
     int16_t  move_x;    // -1000 ~ 1000
     int16_t  move_y;    // -1000 ~ 1000
-    int16_t  yaw;       // 0 ~ 35999 (0.01도)
+    uint16_t yaw;       // 0 ~ 35999 (0.01도). int16으로는 32767까지밖에 못 담는다
     uint8_t  buttons;   // InputButton 비트마스크
 };
 
@@ -284,7 +284,7 @@ struct S2C_AvatarInfo {
     int32_t  object_id;
     int32_t  visual_id;
     Vec3i    pos;
-    int16_t  yaw;
+    uint16_t yaw;
     int32_t  hp;
     int32_t  max_hp;
     uint64_t exp;
@@ -298,7 +298,7 @@ struct S2C_AddObject {
     int32_t visual_id;
     char    obj_name[MAX_NAME_LEN];
     Vec3i   pos;
-    int16_t yaw;
+    uint16_t yaw;
     int32_t hp;
     int32_t max_hp;
     uint8_t level;
@@ -319,7 +319,7 @@ struct S2C_SelfState {
     uint32_t last_processed_input;
     uint32_t server_tick;
     Vec3i    pos;
-    int16_t  yaw;
+    uint16_t yaw;
     int16_t  vel_x;     // cm/s
     int16_t  vel_y;
     int16_t  vel_z;
@@ -336,7 +336,7 @@ struct S2C_MoveObject {
     int32_t  object_id;
     uint32_t server_tick;
     Vec3i    pos;
-    int16_t  yaw;
+    uint16_t yaw;
     int16_t  vel_x;
     int16_t  vel_y;
 };
@@ -361,7 +361,7 @@ struct S2C_StatusChange {
 struct C2S_UseSkill {
     PacketHeader h;
     uint16_t skill_id;
-    int16_t  yaw;         // 시전 방향
+    uint16_t yaw;         // 시전 방향
     int32_t  target_id;   // 대상 지정이 없으면 -1
 };
 
@@ -371,7 +371,7 @@ struct S2C_SkillUsed {
     PacketHeader h;
     int32_t  caster_id;
     uint16_t skill_id;
-    int16_t  yaw;
+    uint16_t yaw;
     uint32_t server_tick;
 };
 
