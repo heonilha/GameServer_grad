@@ -193,10 +193,18 @@ bool HandleLogin(const std::shared_ptr<Session>& self, const uint8_t* raw)
 
     // 시작 상태. 지면 높이를 샘플링해 공중에서 시작하지 않게 한다.
     MoveState start{};
-    for (int attempt = 0; attempt < 32; ++attempt) {
-        start.pos.x = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
-        start.pos.y = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
-        if (g_nav.IsWalkable(start.pos.x, start.pos.y)) break;
+    if constexpr (DEV_FIXED_SPAWN) {
+        // 접속 순서대로 격자에 세운다. 겹치지만 않으면 된다.
+        // 무작위 스폰은 서로 시야(100m) 밖이라 2인 검증을 할 수 없다.
+        const int32_t slot = self->GetId();
+        start.pos.x = DEV_SPAWN_X + (slot % 5) * DEV_SPAWN_SPREAD;
+        start.pos.y = DEV_SPAWN_Y + (slot / 5) * DEV_SPAWN_SPREAD;
+    } else {
+        for (int attempt = 0; attempt < 32; ++attempt) {
+            start.pos.x = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
+            start.pos.y = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
+            if (g_nav.IsWalkable(start.pos.x, start.pos.y)) break;
+        }
     }
     start.pos.z   = g_nav.SampleHeight(start.pos.x, start.pos.y);
     start.grounded = true;
@@ -540,8 +548,15 @@ void InitializeNpcs(int32_t count)
 
         MoveState state{};
         for (int attempt = 0; attempt < 32; ++attempt) {
-            state.pos.x = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
-            state.pos.y = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
+            if constexpr (DEV_FIXED_SPAWN) {
+                // 마을 주변에 모아 둔다. 시야 밖에 있으면 AI를 눈으로 볼 수 없다.
+                const int32_t span = DEV_NPC_SPAWN_RADIUS * 2 + 1;
+                state.pos.x = DEV_SPAWN_X + (std::rand() % span) - DEV_NPC_SPAWN_RADIUS;
+                state.pos.y = DEV_SPAWN_Y + (std::rand() % span) - DEV_NPC_SPAWN_RADIUS;
+            } else {
+                state.pos.x = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
+                state.pos.y = WORLD_MIN_CM + (std::rand() % (WORLD_MAX_CM - WORLD_MIN_CM));
+            }
             if (g_nav.IsWalkable(state.pos.x, state.pos.y)) break;
         }
         state.pos.z    = g_nav.SampleHeight(state.pos.x, state.pos.y);

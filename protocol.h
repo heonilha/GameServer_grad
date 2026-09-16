@@ -45,6 +45,17 @@ inline constexpr int32_t  MAX_CHAT_MSG_LEN = 200;
 inline constexpr uint16_t MAX_PACKET_BYTES = 1024;
 
 // ----------------------------------------------------------------------------
+// 개발/테스트용 고정 스폰.
+// ±5km 무작위 스폰은 시야가 100m라 두 클라가 서로를 볼 수 없다.
+// 2인 검증이 끝나면 false 로 되돌린다.
+// ----------------------------------------------------------------------------
+inline constexpr bool     DEV_FIXED_SPAWN      = true;
+inline constexpr int32_t  DEV_SPAWN_X          = 0;
+inline constexpr int32_t  DEV_SPAWN_Y          = 0;
+inline constexpr int32_t  DEV_SPAWN_SPREAD     = 300;    // 접속 순서마다 3m 간격
+inline constexpr int32_t  DEV_NPC_SPAWN_RADIUS = 3000;   // 몬스터를 마을 30m 안에
+
+// ----------------------------------------------------------------------------
 // 시뮬레이션 상수
 //
 // [중요] 이 값들은 서버와 클라이언트가 완전히 같아야 한다.
