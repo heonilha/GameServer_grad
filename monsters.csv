@@ -6,4 +6,7 @@
 monster_id,name,visual_id,aggressive,max_hp,damage,move_speed,aggro_range,attack_range,leash_range,attack_cooldown_ms,attack_windup_ms
 1,Slime,1,0,60,8,300,0,150,2500,1500,400
 2,Golem,2,0,200,20,220,0,220,2000,2500,700
-3,Goblin,3,1,90,12,420,1500,160,3500,1200,350
+# [임시 2026-09-17] Goblin aggressive 1 -> 0.
+# 개발용 고정 스폰(DEV_FIXED_SPAWN)으로 몬스터가 마을에 모여, 접속하자마자 고블린에게 죽고
+# (0,0)에서 부활하는 일이 반복돼 클라 테스트를 방해했다. 클라가 사망/부활을 표시하게 되면 1로 되돌린다.
+3,Goblin,3,0,90,12,420,1500,160,3500,1200,350
