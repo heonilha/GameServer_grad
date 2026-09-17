@@ -7,3 +7,6 @@
 
 # 네비 데이터는 바이너리
 *.bin  binary
+
+# 외부 라이브러리는 받은 그대로 둔다. 줄바꿈을 바꾸면 upstream 과 대조할 수 없다.
+ThirdParty/** -text

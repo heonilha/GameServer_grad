@@ -18,8 +18,8 @@ x64/
 tick_metrics.csv
 navdata.bin
 
-# 로컬 의존성 (README 참고, 각자 받아서 배치)
-ThirdParty/
+# ThirdParty/stdexec 는 저장소에 포함한다(헤더 전용).
+# 팀원이 따로 받아 배치하지 않아도 클론만으로 빌드되게 하기 위해서다.
 
 # 업데이트 도구 입력물 (일회성, 저장소에 두지 않음)
 update_gameserver.ps1

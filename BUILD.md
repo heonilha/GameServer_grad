@@ -2,17 +2,40 @@
 
 ## 요구 사항
 
-- Visual Studio 2022
-- C++20 이상 (`/std:c++20`). 코루틴이 필요하다
-- [stdexec](https://github.com/NVIDIA/stdexec) — include 경로에 추가
+- **Visual Studio 2026** (플랫폼 도구 집합 `v145`)
+  - 설치 관리자에서 **"C++를 사용한 데스크톱 개발"** 워크로드
+  - VS 2022(`v143`)에서는 "v145 도구 집합이 없다"는 오류가 난다.
+    `v143`으로 낮춰 빌드되는지는 확인하지 않았다
+- 그 밖의 설정은 **프로젝트 파일에 모두 들어 있다.** 따로 입력할 것이 없다
+
+| 설정 | 값 | 위치 |
+|---|---|---|
+| C++ 표준 | `stdcpplatest` | `.vcxproj` |
+| 추가 옵션 | `/Zc:__cplusplus /utf-8` | `.vcxproj` |
+| 추가 포함 디렉터리 | `$(ProjectDir)..\..\ThirdParty\stdexec\include` | `.vcxproj` |
+| 디버깅 작업 디렉터리 | 저장소 루트 | `.vcxproj` |
+| 빌드 후 | `skills.csv`, `monsters.csv`를 exe 옆에 복사 | `.vcxproj` |
+
+- [stdexec](https://github.com/NVIDIA/stdexec)는 `ThirdParty/stdexec/`에 **저장소와 함께 들어 있다.**
+  헤더 전용이라 따로 받거나 빌드할 필요가 없다. 버전은 `ThirdParty/stdexec/VERSION.md`
 - 링크: `WS2_32.lib`, `MSWSock.lib` (소스에 `#pragma comment`로 걸려 있다)
 
 실행 디렉터리에 `skills.csv`, `monsters.csv`가 있어야 한다.
+Visual Studio F5는 저장소 루트에서 실행하고, exe를 직접 실행하면 옆에 복사된 파일을 읽는다.
 `navdata.bin`은 없으면 평지로 동작한다.
+
+## 명령줄 빌드
+
+```
+msbuild GameServer_grad\GameServer_grad\GameServer_grad.vcxproj /p:Configuration=Debug /p:Platform=x64
+```
+
+결과물: `GameServer_grad\x64\Debug\GameServer_grad.exe`
 
 ## 필수 설정: `/utf-8`
 
-**이 설정을 빼면 빌드가 깨진다.** 반드시 넣어야 한다.
+**이 설정을 빼면 빌드가 깨진다.** 프로젝트 파일에는 이미 들어 있다.
+새 프로젝트를 만들거나 설정을 초기화했을 때를 위해 기록해 둔다.
 
 ```
 프로젝트 속성 → C/C++ → 명령줄 → 추가 옵션:  /utf-8
