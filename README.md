@@ -4,9 +4,24 @@
 C++26 execution(P2300, stdexec) 기반 sender/receiver 모델 위에
 Windows IOCP를 통합했다.
 
+## 처음 받았을 때
+
+**Visual Studio 2026**("C++를 사용한 데스크톱 개발" 워크로드)만 있으면 된다.
+라이브러리 설치나 프로젝트 속성 입력은 필요 없다.
+
+1. 저장소를 클론한다
+2. `GameServer_grad/GameServer_grad.slnx`를 연다
+3. 구성을 **Debug / x64**로 두고 **F5**
+4. 콘솔에 `Game server started on port 3500`이 나오면 준비 완료
+
+- 처음 실행하면 Windows 방화벽 창이 뜬다. 다른 PC에서 접속하려면 **개인 네트워크**를 허용한다.
+  같은 PC(`127.0.0.1`)에서만 테스트하면 상관없다.
+- 클라이언트 접속 방법은 클라이언트 저장소(`heonilha/Test`)의 `HANDOFF_CLIENT_V52.md` 참고.
+- `Failed to load monsters.csv`로 바로 꺼지면 작업 디렉터리 문제다. `BUILD.md` 참고.
+
 ## 빌드
 
-`BUILD.md` 참고. **`/utf-8` 컴파일 옵션이 필수다.**
+`BUILD.md` 참고. **`/utf-8` 컴파일 옵션이 필수다**(프로젝트 파일에 이미 들어 있다).
 빼면 한글 주석이 구문을 깨뜨리고, 그 여파로 stdexec에서
 관계없어 보이는 템플릿 오류가 쏟아진다.
 
