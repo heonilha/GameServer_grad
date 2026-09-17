@@ -1,4 +1,4 @@
-﻿# 소스는 UTF-8 BOM. Git 이 내용을 건드리지 않게 한다.
+# 소스는 UTF-8 BOM. Git 이 내용을 건드리지 않게 한다.
 *.h    -text
 *.cpp  -text
 

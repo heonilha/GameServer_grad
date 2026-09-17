@@ -27,10 +27,13 @@ Visual Studio F5는 저장소 루트에서 실행하고, exe를 직접 실행하
 ## 명령줄 빌드
 
 ```
-msbuild GameServer_grad\GameServer_grad\GameServer_grad.vcxproj /p:Configuration=Debug /p:Platform=x64
+msbuild GameServer_grad\GameServer_grad.slnx /p:Configuration=Debug /p:Platform=x64
 ```
 
-결과물: `GameServer_grad\x64\Debug\GameServer_grad.exe`
+결과물: `GameServer_grad\x64\Debug\GameServer_grad.exe` (Visual Studio에서 빌드한 것과 같은 위치)
+
+`.vcxproj`를 직접 빌드해도 되지만 결과물이 `GameServer_grad\GameServer_grad\x64\Debug\`에 생긴다.
+어느 쪽이든 `skills.csv`, `monsters.csv`가 exe 옆에 복사된다.
 
 ## 필수 설정: `/utf-8`
 
