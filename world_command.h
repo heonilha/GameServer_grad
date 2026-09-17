@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // world_command.h — 섹터 경계를 넘는 변경을 모으는 커맨드 버퍼
 //
@@ -35,8 +35,20 @@
 
 #include <cstdint>
 #include <vector>
+#include <unordered_set>
 
 #include "protocol.h"
+
+// ----------------------------------------------------------------------------
+// 현재 스레드가 맡은 파티션 번호
+//
+// 병렬 페이즈에 진입할 때 각 워커가 자기 번호를 여기에 넣는다.
+// 커맨드를 기록하는 코드는 호출 깊이가 깊어서 파티션 번호를 인자로
+// 계속 넘기기가 번거롭다. 스레드마다 하나씩 두면 그 배관이 사라진다.
+//
+// 직렬 구간에서는 0이다. 직렬 구간은 커맨드를 기록하지 않으므로 무관하다.
+// ----------------------------------------------------------------------------
+inline thread_local int32_t t_partition = 0;
 
 enum class CommandType : uint8_t {
     Damage,      // 피해. 사망 처리까지 여기서 결정된다
@@ -140,4 +152,44 @@ public:
 
 private:
     std::vector<CommandOutbox> m_outboxes;
+};
+
+// ----------------------------------------------------------------------------
+// 이번 틱에 위치가 바뀐 오브젝트
+//
+// 병렬 페이즈에서 여러 워커가 동시에 기록하므로 파티션마다 버퍼를 둔다.
+// 직렬 구간에서 Merge()로 하나의 집합에 합치고, 스냅샷 페이즈가 읽는다.
+//
+// 안 움직인 오브젝트의 위치를 보내지 않는 것이 대역폭 절감의 핵심이라
+// 이 집합이 정확해야 한다.
+// ----------------------------------------------------------------------------
+class MovedSet {
+public:
+    void Initialize(size_t partition_count) {
+        m_parts.resize(partition_count);
+    }
+
+    // 병렬 페이즈에서 호출. 락이 없다.
+    void Mark(int32_t id) {
+        m_parts[t_partition].push_back(id);
+    }
+
+    // 직렬 구간에서 호출.
+    void Merge() {
+        for (std::vector<int32_t>& part : m_parts) {
+            for (int32_t id : part) m_merged.insert(id);
+            part.clear();
+        }
+    }
+
+    bool Contains(int32_t id) const { return m_merged.count(id) > 0; }
+
+    void Clear() {
+        m_merged.clear();
+        for (std::vector<int32_t>& part : m_parts) part.clear();
+    }
+
+private:
+    std::vector<std::vector<int32_t>> m_parts;
+    std::unordered_set<int32_t> m_merged;
 };

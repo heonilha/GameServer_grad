@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // nav_grid.h — 서버가 아는 최소한의 지형 정보
 //
@@ -24,16 +24,17 @@
 #include <string>
 
 #include "protocol.h"
+#include "file_util.h"
 
 // 이동 가능 판정 해상도 (cm). 2m 격자.
 inline constexpr int32_t NAV_CELL_SIZE = 200;
-inline constexpr int32_t NAV_DIM = (WORLD_MAX - WORLD_MIN) / NAV_CELL_SIZE;
+inline constexpr int32_t NAV_DIM = (WORLD_MAX_CM - WORLD_MIN_CM) / NAV_CELL_SIZE;
 
 // 높이 샘플 해상도 (cm). 8m 격자를 쌍선형 보간해서 쓴다.
 // 이동 가능 판정보다 성기게 잡아도 되는 이유는, 높이는 연속적으로
 // 변하지만 통행 가능 여부는 벽 하나로 급격히 바뀌기 때문이다.
 inline constexpr int32_t HEIGHT_CELL_SIZE = 800;
-inline constexpr int32_t HEIGHT_DIM = (WORLD_MAX - WORLD_MIN) / HEIGHT_CELL_SIZE + 1;
+inline constexpr int32_t HEIGHT_DIM = (WORLD_MAX_CM - WORLD_MIN_CM) / HEIGHT_CELL_SIZE + 1;
 
 class NavGrid {
 public:
@@ -54,10 +55,8 @@ public:
     //   [...]    int16[]   높이 (10cm 단위. int16이라 ±3276m까지 표현)
     // ------------------------------------------------------------------------
     bool LoadFromFile(const std::string& path) {
-        FILE* fp = nullptr;
-        if (fopen_s(&fp, path.c_str(), "rb") != 0 || fp == nullptr) {
-            return false;   // 파일이 없으면 평지 기본값 유지
-        }
+        std::FILE* fp = OpenFile(path.c_str(), "rb");
+        if (fp == nullptr) return false;   // 파일이 없으면 평지 기본값 유지
 
         char magic[4]{};
         int32_t nav_dim = 0, height_dim = 0;
@@ -95,12 +94,12 @@ public:
     // ------------------------------------------------------------------------
 
     bool IsWalkable(int32_t world_x, int32_t world_y) const {
-        if (world_x < WORLD_MIN || world_x >= WORLD_MAX ||
-            world_y < WORLD_MIN || world_y >= WORLD_MAX) {
+        if (world_x < WORLD_MIN_CM || world_x >= WORLD_MAX_CM ||
+            world_y < WORLD_MIN_CM || world_y >= WORLD_MAX_CM) {
             return false;
         }
-        const int32_t cx = (world_x - WORLD_MIN) / NAV_CELL_SIZE;
-        const int32_t cy = (world_y - WORLD_MIN) / NAV_CELL_SIZE;
+        const int32_t cx = (world_x - WORLD_MIN_CM) / NAV_CELL_SIZE;
+        const int32_t cy = (world_y - WORLD_MIN_CM) / NAV_CELL_SIZE;
         const size_t index = static_cast<size_t>(cy) * NAV_DIM + cx;
         return (m_walkable[index >> 3] >> (index & 7)) & 1;
     }
@@ -108,8 +107,8 @@ public:
     // 지면 높이. 성긴 격자를 쌍선형 보간해서 경사가 계단처럼 보이지 않게 한다.
     // 정수 연산만 쓰는 이유는 클라이언트와 결과를 정확히 맞추기 위해서다.
     int32_t SampleHeight(int32_t world_x, int32_t world_y) const {
-        const int64_t fx = static_cast<int64_t>(world_x) - WORLD_MIN;
-        const int64_t fy = static_cast<int64_t>(world_y) - WORLD_MIN;
+        const int64_t fx = static_cast<int64_t>(world_x) - WORLD_MIN_CM;
+        const int64_t fy = static_cast<int64_t>(world_y) - WORLD_MIN_CM;
 
         int32_t gx = static_cast<int32_t>(fx / HEIGHT_CELL_SIZE);
         int32_t gy = static_cast<int32_t>(fy / HEIGHT_CELL_SIZE);

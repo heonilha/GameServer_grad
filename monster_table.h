@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // monster_table.h — 몬스터 수치 테이블
 //
@@ -20,6 +20,7 @@
 #include <string>
 
 #include "protocol.h"
+#include "csv_util.h"
 
 inline constexpr int32_t MAX_MONSTER_TYPES = 64;
 
@@ -52,8 +53,8 @@ struct MonsterDef {
 class MonsterTable {
 public:
     bool LoadFromCsv(const std::string& path) {
-        FILE* fp = nullptr;
-        if (fopen_s(&fp, path.c_str(), "r") != 0 || fp == nullptr) return false;
+        std::FILE* fp = OpenFile(path.c_str(), "r");
+        if (fp == nullptr) return false;
 
         char line[512];
         bool header_skipped = false;
@@ -92,36 +93,28 @@ public:
     }
 
 private:
+    // 컬럼 수. CSV 헤더와 반드시 일치해야 한다.
+    //   monster_id, name, visual_id, aggressive, max_hp, damage, move_speed,
+    //   aggro_range, attack_range, leash_range, attack_cooldown_ms,
+    //   attack_windup_ms
+    static constexpr int FIELD_COUNT = 12;
+
     static bool ParseLine(char* line, MonsterDef& def) {
-        char* ctx = nullptr;
-        auto next = [&]() -> const char* {
-            return std::strtok_s(nullptr, ",\r\n", &ctx);
-        };
+        const char* f[FIELD_COUNT]{};
+        if (SplitCsvLine(line, f, FIELD_COUNT) < FIELD_COUNT) return false;
 
-        const char* first = std::strtok_s(line, ",\r\n", &ctx);
-        if (!first) return false;
-        def.id = static_cast<uint16_t>(std::atoi(first));
-
-        const char* name = next();
-        if (!name) return false;
-        std::strncpy(def.name, name, sizeof(def.name) - 1);
-
-        const char* f[10]{};
-        for (int i = 0; i < 10; ++i) {
-            f[i] = next();
-            if (!f[i]) return false;
-        }
-
-        def.visual_id          = std::atoi(f[0]);
-        def.aggressive         = static_cast<uint8_t>(std::atoi(f[1]));
-        def.max_hp             = std::atoi(f[2]);
-        def.damage             = std::atoi(f[3]);
-        def.move_speed         = std::atoi(f[4]);
-        def.aggro_range        = std::atoi(f[5]);
-        def.attack_range       = std::atoi(f[6]);
-        def.leash_range        = std::atoi(f[7]);
-        def.attack_cooldown_ms = std::atoi(f[8]);
-        def.attack_windup_ms   = std::atoi(f[9]);
+        def.id                 = static_cast<uint16_t>(std::atoi(f[0]));
+        CopyFixed(def.name, sizeof(def.name), f[1]);
+        def.visual_id          = std::atoi(f[2]);
+        def.aggressive         = static_cast<uint8_t>(std::atoi(f[3]));
+        def.max_hp             = std::atoi(f[4]);
+        def.damage             = std::atoi(f[5]);
+        def.move_speed         = std::atoi(f[6]);
+        def.aggro_range        = std::atoi(f[7]);
+        def.attack_range       = std::atoi(f[8]);
+        def.leash_range        = std::atoi(f[9]);
+        def.attack_cooldown_ms = std::atoi(f[10]);
+        def.attack_windup_ms   = std::atoi(f[11]);
         def.exp_reward         = 0;   // 경험치 시스템이 들어오면 컬럼 추가
         return true;
     }

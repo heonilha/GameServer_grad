@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // combat.h — 전투 판정
 //
@@ -47,7 +47,7 @@
 //   dot(facing, dir) >= |dir| * cos(반각)
 // 양변에 |dir|이 곱해져 있으므로, 미리 구해둔 cos(반각)만 있으면
 // 나눗셈 없이 정수 비교로 끝난다.
-inline bool IsInCone(const Vec3i& origin, int16_t yaw,
+inline bool IsInCone(const Vec3i& origin, uint16_t yaw,
                      const Vec3i& target,
                      int32_t range_sq, int32_t half_angle_cos)
 {
@@ -87,7 +87,7 @@ struct PendingHit {
     uint32_t execute_tick = 0;
     int32_t  caster_id = 0;
     uint16_t skill_id = 0;
-    int16_t  yaw = 0;        // 시전 시점의 방향을 쓴다
+    uint16_t yaw = 0;        // 시전 시점의 방향을 쓴다
 };
 
 struct Projectile {

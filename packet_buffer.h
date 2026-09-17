@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // packet_buffer.h — 세션별 수신 조립 버퍼
 //
@@ -27,7 +27,7 @@
 class PacketBuffer {
 public:
     // 최대 패킷 여러 개가 한 번에 들어와도 담기게 넉넉히 잡는다.
-    static constexpr size_t CAPACITY = MAX_PACKET_SIZE * 16;
+    static constexpr size_t CAPACITY = MAX_PACKET_BYTES * 16;
 
     // ---- 수신 ----
 
@@ -53,7 +53,7 @@ public:
 
         // 크기가 헤더보다 작거나 상한을 넘으면 스트림이 깨진 것이다.
         // 호출자가 세션을 끊도록 여기서는 false를 돌려준다.
-        if (size < sizeof(PacketHeader) || size > MAX_PACKET_SIZE) {
+        if (size < sizeof(PacketHeader) || size > MAX_PACKET_BYTES) {
             out_size = 0;
             return false;
         }
@@ -69,7 +69,7 @@ public:
         if (m_tail - m_head < sizeof(PacketHeader)) return false;
         const uint16_t size =
             reinterpret_cast<const PacketHeader*>(m_data.data() + m_head)->size;
-        return size < sizeof(PacketHeader) || size > MAX_PACKET_SIZE;
+        return size < sizeof(PacketHeader) || size > MAX_PACKET_BYTES;
     }
 
     // 처리를 마친 패킷만큼 앞으로 나아간다. 여기서는 메모리를 안 옮긴다.

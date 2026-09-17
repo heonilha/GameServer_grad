@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // world_grid.h — 섹터 그리드 (시야 처리의 핵심)
 //
@@ -27,7 +27,7 @@
 class WorldGrid {
 public:
     static constexpr int32_t GRID_DIM =
-        (WORLD_MAX - WORLD_MIN + SECTOR_SIZE - 1) / SECTOR_SIZE;
+        (WORLD_MAX_CM - WORLD_MIN_CM + SECTOR_SIZE - 1) / SECTOR_SIZE;
 
     WorldGrid() : m_sectors(std::make_unique<Sector[]>(GRID_DIM* GRID_DIM)) {}
 
@@ -60,8 +60,8 @@ public:
     // 3D지만 시야 판정은 수평 거리로만 해도 충분하고, 3D 격자는 메모리가
     // 세제곱으로 늘어난다.
     static SectorCoord ToSector(const Vec3i& pos) {
-        int32_t sx = (pos.x - WORLD_MIN) / SECTOR_SIZE;
-        int32_t sy = (pos.y - WORLD_MIN) / SECTOR_SIZE;
+        int32_t sx = (pos.x - WORLD_MIN_CM) / SECTOR_SIZE;
+        int32_t sy = (pos.y - WORLD_MIN_CM) / SECTOR_SIZE;
         return { Clamp(sx), Clamp(sy) };
     }
 
@@ -97,6 +97,22 @@ public:
             s.objects.insert(id);
         }
     }
+
+    // 한 섹터의 오브젝트 id를 복사해 온다.
+    //
+    // 웨이브 병렬 페이즈에서 섹터 하나를 처리할 때 쓴다.
+    // 그 구간에는 이 섹터를 건드리는 스레드가 하나뿐이고 그리드 소속 변경도
+    // 커맨드로 미뤄져 있어서 사실 락이 필요 없지만, 다른 곳에서도 부를 수
+    // 있으므로 잠근다. 경합이 없어서 비용은 무시할 수준이다.
+    void CopyObjects(int32_t sector_index, std::vector<int32_t>& out) const {
+        out.clear();
+        if (sector_index < 0 || sector_index >= GRID_DIM * GRID_DIM) return;
+        Sector& s = m_sectors[sector_index];
+        std::lock_guard lock(s.lock);
+        out.assign(s.objects.begin(), s.objects.end());
+    }
+
+    static constexpr int32_t SectorCount() { return GRID_DIM * GRID_DIM; }
 
     // 주변 3x3 섹터의 오브젝트 id를 모아 돌려준다.
     // 콜백을 락 안에서 부르면 데드락 위험이 있으므로, 복사해서 나온 뒤 처리한다.

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // protocol.h — 서버와 언리얼 클라이언트가 "파일 단위로" 공유하는 헤더.
 //
@@ -22,16 +22,18 @@
 inline constexpr uint16_t SERVER_PORT   = 3500;
 
 // 좌표계는 언리얼 월드 좌표(cm)를 그대로 쓴다.
-inline constexpr int32_t  WORLD_MIN     = -500000;   // -5km
-inline constexpr int32_t  WORLD_MAX     =  500000;   // +5km
+inline constexpr int32_t  WORLD_MIN_CM  = -500000;   // -5km
+inline constexpr int32_t  WORLD_MAX_CM  =  500000;   // +5km
 
 inline constexpr int32_t  SECTOR_SIZE   = 12800;     // 시야 섹터 한 변 (128m)
 inline constexpr int32_t  VIEW_RANGE    = 10000;     // 시야 거리 (100m)
 
 // [불변식] VIEW_RANGE <= SECTOR_SIZE
 // 이 조건이 지켜져야 주변 3x3 섹터만 검사해도 시야 안을 빠짐없이 찾는다.
+// VIEW_RANGE <= SECTOR_SIZE 여야 주변 3x3 섹터 검사만으로
+// 시야 안의 모든 오브젝트를 빠짐없이 찾을 수 있다.
 static_assert(VIEW_RANGE <= SECTOR_SIZE,
-    "VIEW_RANGE는 SECTOR_SIZE 이하여야 3x3 섹터 검사로 충분하다");
+    "VIEW_RANGE must be <= SECTOR_SIZE for 3x3 sector queries");
 
 inline constexpr int32_t  MAX_PLAYERS   = 10000;
 inline constexpr int32_t  MAX_NPCS      = 1000;
@@ -40,7 +42,18 @@ inline constexpr int32_t  NPC_ID_START  = 1000000;
 inline constexpr int32_t  MAX_NAME_LEN     = 20;
 inline constexpr int32_t  MAX_CHAT_MSG_LEN = 200;
 
-inline constexpr uint16_t MAX_PACKET_SIZE  = 1024;
+inline constexpr uint16_t MAX_PACKET_BYTES = 1024;
+
+// ----------------------------------------------------------------------------
+// 개발/테스트용 고정 스폰.
+// ±5km 무작위 스폰은 시야가 100m라 두 클라가 서로를 볼 수 없다.
+// 2인 검증이 끝나면 false 로 되돌린다.
+// ----------------------------------------------------------------------------
+inline constexpr bool     DEV_FIXED_SPAWN      = true;
+inline constexpr int32_t  DEV_SPAWN_X          = 0;
+inline constexpr int32_t  DEV_SPAWN_Y          = 0;
+inline constexpr int32_t  DEV_SPAWN_SPREAD     = 300;    // 접속 순서마다 3m 간격
+inline constexpr int32_t  DEV_NPC_SPAWN_RADIUS = 3000;   // 몬스터를 마을 30m 안에
 
 // ----------------------------------------------------------------------------
 // 시뮬레이션 상수
@@ -50,6 +63,11 @@ inline constexpr uint16_t MAX_PACKET_SIZE  = 1024;
 // 스냅샷이 도착할 때마다 캐릭터가 튄다.
 // ----------------------------------------------------------------------------
 
+// [주의] TICK_RATE는 1000의 약수로 잡는 것이 좋다.
+// 30이면 TICK_MS가 33이 되어 30틱이 990ms가 되고, 실제 속도가
+// 설계값보다 1% 낮아진다. 서버와 클라이언트가 같은 값을 쓰므로
+// 어긋나지는 않지만, WALK_SPEED=600이 정확히 초당 600cm를 뜻하지 않게 된다.
+// 정확히 맞추려면 20(50ms), 25(40ms), 40(25ms), 50(20ms) 중에서 고른다.
 inline constexpr int32_t TICK_RATE = 30;               // 초당 시뮬레이션 횟수
 inline constexpr int32_t TICK_MS   = 1000 / TICK_RATE; // 33ms
 
@@ -240,7 +258,7 @@ struct C2S_Input {
     uint32_t sequence;
     int16_t  move_x;    // -1000 ~ 1000
     int16_t  move_y;    // -1000 ~ 1000
-    int16_t  yaw;       // 0 ~ 35999 (0.01도)
+    uint16_t yaw;       // 0 ~ 35999 (0.01도). int16으로는 32767까지밖에 못 담는다
     uint8_t  buttons;   // InputButton 비트마스크
 };
 
@@ -277,7 +295,7 @@ struct S2C_AvatarInfo {
     int32_t  object_id;
     int32_t  visual_id;
     Vec3i    pos;
-    int16_t  yaw;
+    uint16_t yaw;
     int32_t  hp;
     int32_t  max_hp;
     uint64_t exp;
@@ -291,7 +309,7 @@ struct S2C_AddObject {
     int32_t visual_id;
     char    obj_name[MAX_NAME_LEN];
     Vec3i   pos;
-    int16_t yaw;
+    uint16_t yaw;
     int32_t hp;
     int32_t max_hp;
     uint8_t level;
@@ -312,7 +330,7 @@ struct S2C_SelfState {
     uint32_t last_processed_input;
     uint32_t server_tick;
     Vec3i    pos;
-    int16_t  yaw;
+    uint16_t yaw;
     int16_t  vel_x;     // cm/s
     int16_t  vel_y;
     int16_t  vel_z;
@@ -329,7 +347,7 @@ struct S2C_MoveObject {
     int32_t  object_id;
     uint32_t server_tick;
     Vec3i    pos;
-    int16_t  yaw;
+    uint16_t yaw;
     int16_t  vel_x;
     int16_t  vel_y;
 };
@@ -354,7 +372,7 @@ struct S2C_StatusChange {
 struct C2S_UseSkill {
     PacketHeader h;
     uint16_t skill_id;
-    int16_t  yaw;         // 시전 방향
+    uint16_t yaw;         // 시전 방향
     int32_t  target_id;   // 대상 지정이 없으면 -1
 };
 
@@ -364,7 +382,7 @@ struct S2C_SkillUsed {
     PacketHeader h;
     int32_t  caster_id;
     uint16_t skill_id;
-    int16_t  yaw;
+    uint16_t yaw;
     uint32_t server_tick;
 };
 
@@ -428,10 +446,10 @@ struct S2C_Respawn {
 // ----------------------------------------------------------------------------
 template <typename T>
 constexpr void InitHeader(T& packet, PacketType type) {
-    static_assert(sizeof(T) <= MAX_PACKET_SIZE, "패킷이 MAX_PACKET_SIZE를 넘는다");
+    static_assert(sizeof(T) <= MAX_PACKET_BYTES, "packet exceeds MAX_PACKET_BYTES");
     packet.h.size = static_cast<uint16_t>(sizeof(T));
     packet.h.type = static_cast<uint16_t>(type);
 }
 
-static_assert(sizeof(PacketHeader) == 4,  "헤더는 4바이트여야 한다");
-static_assert(sizeof(Vec3i)        == 12, "Vec3i는 12바이트여야 한다");
+static_assert(sizeof(PacketHeader) == 4,  "PacketHeader must be 4 bytes");
+static_assert(sizeof(Vec3i)        == 12, "Vec3i must be 12 bytes");

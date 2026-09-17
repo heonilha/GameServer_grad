@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // net_core.h — IOCP를 stdexec sender로 감싸는 계층
 //
@@ -15,6 +15,10 @@
 // [수명 규칙] 호출자는 sender가 완료될 때까지 버퍼를 살려둬야 한다.
 //            co_await로 완료를 기다리는 동안 버퍼가 살아있으면 된다.
 // ============================================================================
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 
 #include <WS2tcpip.h>
 #include <MSWSock.h>

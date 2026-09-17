@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // monster_ai.h — 몬스터 AI 페이즈
 //
@@ -97,14 +97,14 @@ inline bool MoveToward(NpcEntity& npc, const Vec3i& goal,
     next.z = g_nav.SampleHeight(next.x, next.y);
 
     // 진행 방향을 바라본다 (0.01도 단위)
-    const int16_t yaw = static_cast<int16_t>(
+    const uint16_t yaw = static_cast<uint16_t>(
         (static_cast<int32_t>(std::atan2(
             static_cast<double>(next.y - from.y),
             static_cast<double>(next.x - from.x)) * 18000.0 / 3.14159265358979)
          + 36000) % 36000);
 
     npc.SetPosition(next, yaw);
-    g_moved.insert(npc.GetId());
+    g_moved.Mark(npc.GetId());
 
     // 섹터를 넘었을 때만 커맨드를 남긴다.
     // 이동 대부분은 같은 섹터 안에서 일어나므로 이 검사가 중요하다.
@@ -305,47 +305,25 @@ inline void UpdateMonster(NpcEntity& npc, uint32_t now_tick)
 }
 
 // ----------------------------------------------------------------------------
-// AI 페이즈 본체
+// 섹터 하나의 몬스터를 갱신한다.
+//
+// 호출자(틱 루프)가 웨이브 단위로 섹터를 나눠 병렬 호출한다.
+// 같은 웨이브의 섹터는 간격이 2 이상이라 서로의 객체를 건드릴 수 없고,
+// 남의 객체를 바꿔야 하는 경우는 전부 커맨드로 빠져 있으므로 락이 없다.
+//
+// 섹터 휴면은 호출자가 처리한다. 웨이브 목록 자체를 "플레이어가 있는
+// 섹터 주변 3x3"으로만 만들기 때문에, 아무도 보고 있지 않은 섹터는
+// 애초에 여기까지 오지 않는다.
 // ----------------------------------------------------------------------------
-inline void RunAiPhase(uint32_t now_tick)
+inline void UpdateMonstersInSector(int32_t sector_index, uint32_t now_tick,
+                                   std::vector<int32_t>& scratch)
 {
-    if (now_tick % AI_TICK_INTERVAL != 0) return;
+    g_grid.CopyObjects(sector_index, scratch);
 
-    // 플레이어가 있는 섹터만 모은다.
-    // 이 집합 밖의 몬스터는 아무 일도 하지 않는다.
-    static std::unordered_set<uint64_t> active_sectors;
-    active_sectors.clear();
-
-    g_sessions.ForEach([&](const std::shared_ptr<Session>& session) {
-        if (session->GetState() != SessionState::Playing) return;
-        const auto s = WorldGrid::ToSector(session->GetPosition());
-
-        // 플레이어 주변 3x3을 활성으로 잡는다.
-        // 섹터 경계 바로 밖의 몬스터도 반응해야 자연스럽다.
-        for (int32_t dy = -1; dy <= 1; ++dy) {
-            for (int32_t dx = -1; dx <= 1; ++dx) {
-                const uint64_t key =
-                    (static_cast<uint64_t>(s.sx + dx) << 32) |
-                    static_cast<uint32_t>(s.sy + dy);
-                active_sectors.insert(key);
-            }
-        }
-    });
-
-    if (active_sectors.empty()) return;   // 접속자가 없으면 통째로 건너뛴다
-
-    for (int32_t i = 0; i < g_npcs.Count(); ++i) {
-        NpcEntity* npc = g_npcs.At(i);
-        if (!npc->IsAlive()) continue;
-
-        const auto s = WorldGrid::ToSector(npc->GetPosition());
-        const uint64_t key =
-            (static_cast<uint64_t>(s.sx) << 32) | static_cast<uint32_t>(s.sy);
-
-        // 추격 중인 몬스터는 휴면시키지 않는다.
-        // 플레이어가 활성 섹터 밖으로 잠깐 벗어나도 추격이 끊기면 어색하다.
-        if (!active_sectors.count(key) && npc->ai_state == AiState::Idle) continue;
-
+    for (int32_t id : scratch) {
+        if (id < NPC_ID_START) continue;          // 플레이어는 시뮬레이션 페이즈에서
+        NpcEntity* npc = g_npcs.Get(id);
+        if (!npc || !npc->IsAlive()) continue;
         UpdateMonster(*npc, now_tick);
     }
 }

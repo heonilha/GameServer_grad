@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ============================================================================
 // combat_tick.h — 틱 루프의 전투 페이즈
 //
@@ -31,10 +31,10 @@ extern SkillTable     g_skills;
 extern CombatSystem   g_combat;
 extern CommandBus     g_commands;
 
-// 전투 페이즈가 쓰는 출력함.
-// 지금은 파티션이 하나뿐이지만, 섹터 병렬화를 붙이면 섹터가 속한
-// 파티션의 출력함을 쓰게 된다.
-inline CommandOutbox& CombatOutbox() { return g_commands.For(0); }
+// 지금 스레드가 쓰는 출력함.
+// 병렬 페이즈에서는 워커가 t_partition을 자기 번호로 설정해두므로
+// 각자 다른 버퍼에 기록한다. 직렬 구간에서는 0번이다.
+inline CommandOutbox& CombatOutbox() { return g_commands.For(t_partition); }
 
 // 피해를 "적용"하지 않고 "기록"한다.
 // 대상이 다른 섹터에 있을 수 있고, 적용 순서를 고정해야 하기 때문이다.

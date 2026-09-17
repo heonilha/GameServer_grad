@@ -6,15 +6,9 @@ Windows IOCP를 통합했다.
 
 ## 빌드
 
-- Visual Studio 2022 (C++20 이상, 코루틴 필요)
-- [stdexec](https://github.com/NVIDIA/stdexec) 의존
-- `WS2_32.lib`, `MSWSock.lib` 링크
-
-실행 디렉터리에 `skills.csv`, `monsters.csv`가 있어야 한다.
-`navdata.bin`은 없으면 평지로 동작한다.
-
-> **주의**: 이 저장소의 코드는 아직 컴파일 검증을 거치지 않았다.
-> 최초 빌드 시 잔오류가 나올 수 있다.
+`BUILD.md` 참고. **`/utf-8` 컴파일 옵션이 필수다.**
+빼면 한글 주석이 구문을 깨뜨리고, 그 여파로 stdexec에서
+관계없어 보이는 템플릿 오류가 쏟아진다.
 
 ## 구조
 
