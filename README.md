@@ -16,7 +16,7 @@ Windows IOCP를 통합했다.
 
 - 처음 실행하면 Windows 방화벽 창이 뜬다. 다른 PC에서 접속하려면 **개인 네트워크**를 허용한다.
   같은 PC(`127.0.0.1`)에서만 테스트하면 상관없다.
-- 클라이언트 접속 방법은 클라이언트 저장소(`heonilha/Test`)의 `HANDOFF_CLIENT_V52.md` 참고.
+- 클라이언트 접속 방법은 클라이언트 저장소(`heonilha/Test`)의 `docs/TEAM_GUIDE.md` 참고.
 - `Failed to load monsters.csv`로 바로 꺼지면 작업 디렉터리 문제다. `BUILD.md` 참고.
 
 ## 빌드
